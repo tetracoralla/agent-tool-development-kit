@@ -1,11 +1,11 @@
 {
   "name": "agent-tool-development-kit",
-  "version": "0.1.0",
+  "version": "0.1.2",
   "description": "Build, check, package, and probe OpenAdam-compatible Agent tools from an explicit repository contract.",
   "author": {
     "name": "openAdam"
   },
-  "license": "UNLICENSED",
+  "license": "Apache-2.0",
   "keywords": ["agent-tools", "developer-tools", "openadam"],
   "skills": "./skills/",
   "interface": {

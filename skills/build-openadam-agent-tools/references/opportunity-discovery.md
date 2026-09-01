@@ -37,6 +37,13 @@ observation instead. If the Agent runtime would transmit local history to a
 remote model, that disclosure is a separate privacy choice and cannot be
 inferred from filesystem readability.
 
+For current tool and Skill inventory, prefer a supported harness command such
+as the host's plugin list, an Agent Host compact snapshot, or an inventory the
+caller supplied. Do not recursively enumerate `~/.codex`, `~/.claude`, generic
+`.agents` roots, session stores, or sibling repositories. Filesystem presence
+does not establish current availability, activation, or use, and broad scans add
+privacy exposure and routing cost without answering those questions.
+
 ## Extract task-native observations
 
 For each selected example, record only what is needed to test a product

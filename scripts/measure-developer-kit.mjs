@@ -163,7 +163,7 @@ async function main() {
     const result = {
       schemaVersion: 'openadam.developer-kit-self-measurement.v0.1',
       status: 'ok',
-      artifact: { version: '0.1.0', carrier: 'packed-developer-kit-component' },
+      artifact: { version: '0.1.2', carrier: 'packed-developer-kit-component' },
       workload: { iterations, concurrency },
       measurement: {
         cliStartup: { cold, warm: distribution(warm) },

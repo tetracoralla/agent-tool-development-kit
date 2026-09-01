@@ -31,11 +31,12 @@ try {
   assert.equal(componentSbom.packages.find((item) => item.SPDXID === 'SPDXRef-RootPackage')?.licenseDeclared, 'Apache-2.0')
   assert.match(await readFile(join(temporary, 'LICENSE'), 'utf8'), /Apache License\s+Version 2\.0/u)
   const version = JSON.parse((await execFileAsync(process.execPath, [runtime, '--version', '--json'], { maxBuffer: 64 * 1024 })).stdout)
-  assert.deepEqual(version, { schemaVersion: 'openadam.developer-kit-version.v0.1', status: 'ok', version: '0.1.0' })
+  assert.deepEqual(version, { schemaVersion: 'openadam.developer-kit-version.v0.1', status: 'ok', version: '0.1.2' })
 
   const plugin = JSON.parse(await readFile(join(root, '.codex-plugin/plugin.json'), 'utf8'))
   assert.equal(plugin.name, 'agent-tool-development-kit')
   assert.equal(plugin.version, version.version)
+  assert.equal(plugin.license, 'Apache-2.0')
   assert.equal(plugin.skills, './skills/')
   assert.equal(plugin.mcpServers, undefined)
   const skill = await readFile(join(root, 'skills/build-openadam-agent-tools/SKILL.md'), 'utf8')
