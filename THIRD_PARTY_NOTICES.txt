@@ -1,0 +1,8 @@
+The source package declares third-party runtime dependencies in package.json and
+locks their exact resolved versions in package-lock.json. The bundled Agent Host
+component is generated with an SPDX inventory and copies the license files of
+every dependency whose code is present in the bundle.
+
+The Agent Tool Development Kit is licensed under Apache-2.0. Bundled
+dependencies remain subject to the licenses listed in the generated component
+inventory and accompanying license files.

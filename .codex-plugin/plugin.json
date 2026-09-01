@@ -1,0 +1,20 @@
+{
+  "name": "agent-tool-development-kit",
+  "version": "0.1.0",
+  "description": "Build, check, package, and probe OpenAdam-compatible Agent tools from an explicit repository contract.",
+  "author": {
+    "name": "openAdam"
+  },
+  "license": "UNLICENSED",
+  "keywords": ["agent-tools", "developer-tools", "openadam"],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Agent Tool Development Kit",
+    "shortDescription": "Build and verify OpenAdam-compatible Agent tools.",
+    "longDescription": "Guides an Agent through explicit product boundaries, deterministic project checks, sealed packaging, and state-free runtime probes without adding a persistent developer MCP tool.",
+    "developerName": "openAdam",
+    "category": "Developer Tools",
+    "capabilities": ["Read"],
+    "defaultPrompt": ["Help me create or adopt an Agent tool project and verify it through the OpenAdam developer workflow."]
+  }
+}

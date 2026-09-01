@@ -1,0 +1,31 @@
+{
+  "name": __PACKAGE_NAME_JSON__,
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": __SUMMARY_JSON__,
+  "author": __AUTHOR_JSON__,
+  "license": __LICENSE_JSON__,
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "__PLUGIN_ID__": "src/cli.mjs"
+  },
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check:syntax": "node --check src/*.mjs scripts/*.mjs test/*.test.mjs",
+    "check:implementation": "node scripts/check-implementation.mjs",
+    "build:plugin": "node scripts/build-plugin.mjs",
+    "pack:component": "node scripts/package-component.mjs",
+    "smoke:mcp": "node scripts/smoke-mcp.mjs",
+    "check": "npm run check:implementation && npm run check:syntax && npm test && npm run build:plugin && npm run smoke:mcp"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "zod": "^4.4.3"
+  },
+  "devDependencies": {
+    "esbuild": "^0.28.1"
+  }
+}

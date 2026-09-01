@@ -1,0 +1,5 @@
+SCAFFOLD_LEGAL_REVIEW_REQUIRED
+
+Review the exact bundled dependency tree and include the notices and license
+texts required by @modelcontextprotocol/sdk, zod, esbuild output, and any
+product-specific dependency before removing .openadam-scaffold.

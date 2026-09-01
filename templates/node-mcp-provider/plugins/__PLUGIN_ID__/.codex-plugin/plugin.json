@@ -1,0 +1,21 @@
+{
+  "name": __PLUGIN_ID_JSON__,
+  "version": "0.1.0",
+  "description": __SUMMARY_JSON__,
+  "author": {
+    "name": __AUTHOR_JSON__
+  },
+  "license": __LICENSE_JSON__,
+  "keywords": ["agent-tool", "mcp"],
+  "skills": "./skills/",
+  "mcpServers": "./.mcp.json",
+  "interface": {
+    "displayName": __DISPLAY_NAME_JSON__,
+    "shortDescription": __SHORT_SUMMARY_JSON__,
+    "longDescription": __SUMMARY_JSON__,
+    "developerName": __AUTHOR_JSON__,
+    "category": "Developer Tools",
+    "capabilities": ["Read"],
+    "defaultPrompt": [__DEFAULT_PROMPT_JSON__]
+  }
+}

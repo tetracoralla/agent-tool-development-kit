@@ -1,0 +1,6 @@
+node_modules/
+.verify/
+dist/
+plugins/*/runtime/
+*.tgz
+.DS_Store

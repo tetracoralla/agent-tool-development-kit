@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "__PLUGIN_ID__": {
+      "command": "node",
+      "args": ["./runtime/mcp-server.mjs"],
+      "cwd": "."
+    }
+  }
+}

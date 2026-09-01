@@ -1,0 +1,29 @@
+{
+  "schemaVersion": "openadam.agent-host-tool-integration.v0.2",
+  "displayName": __DISPLAY_NAME_JSON__,
+  "summary": __SHORT_SUMMARY_JSON__,
+  "codex": {
+    "marketplaceRoot": "marketplace",
+    "marketplace": "private-__PLUGIN_ID__",
+    "pluginRoot": "marketplace/plugins/__PLUGIN_ID__",
+    "plugin": "__PLUGIN_ID__",
+    "identityFiles": [
+      ".codex-plugin/plugin.json",
+      ".mcp.json",
+      "skills/__PLUGIN_ID__/SKILL.md"
+    ]
+  },
+  "runtime": {
+    "transport": "mcp-stdio",
+    "executor": "suite-node",
+    "command": "marketplace/plugins/__PLUGIN_ID__/runtime/mcp-server.mjs",
+    "args": [],
+    "cwd": "marketplace/plugins/__PLUGIN_ID__",
+    "workspaceEnvironment": [],
+    "expectedTools": [__OPERATION_JSON__],
+    "timeoutMs": 5000
+  },
+  "ownership": {
+    "uninstall": "agent-host-created-only"
+  }
+}

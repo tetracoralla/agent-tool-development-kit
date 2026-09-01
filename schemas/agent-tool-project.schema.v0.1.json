@@ -1,0 +1,218 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openadam:schema:agent-tool-project:v0.1",
+  "title": "OpenAdam Agent tool project v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "id",
+    "version",
+    "name",
+    "summary",
+    "documents",
+    "checks",
+    "carriers"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openadam.agent-tool-project.v0.1"
+    },
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9.-]{0,126}[a-z0-9])?$"
+    },
+    "version": {
+      "type": "string",
+      "pattern": "^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z.-]+)?(?:\\+[0-9A-Za-z.-]+)?$"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    },
+    "summary": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 280
+    },
+    "documents": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["productModel", "reviewContract"],
+      "properties": {
+        "productModel": { "$ref": "#/$defs/relativePath" },
+        "reviewContract": { "$ref": "#/$defs/relativePath" }
+      }
+    },
+    "checks": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/check" }
+    },
+    "carriers": {
+      "type": "array",
+      "maxItems": 16,
+      "items": { "$ref": "#/$defs/carrier" }
+    },
+    "contracts": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "capabilityProviderManifest": { "$ref": "#/$defs/relativePath" },
+        "procedureImplementationManifest": { "$ref": "#/$defs/relativePath" }
+      },
+      "minProperties": 1
+    },
+    "package": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["componentId", "command", "artifact", "integration", "legal", "probes"],
+      "properties": {
+        "componentId": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9-]*$",
+          "maxLength": 64
+        },
+        "command": { "$ref": "#/$defs/command" },
+        "artifact": {
+          "allOf": [
+            { "$ref": "#/$defs/relativePath" },
+            { "type": "string", "pattern": "\\.tar\\.gz$" }
+          ]
+        },
+        "integration": { "$ref": "#/$defs/relativePath" },
+        "probes": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 8,
+          "items": { "$ref": "#/$defs/runtimeProbe" }
+        },
+        "legal": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["spdx", "license", "notice", "thirdPartyNotices", "sbom"],
+          "properties": {
+            "spdx": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 256,
+              "pattern": "^[^\\u0000\\r\\n]+$"
+            },
+            "license": { "$ref": "#/$defs/relativePath" },
+            "notice": { "$ref": "#/$defs/relativePath" },
+            "thirdPartyNotices": { "$ref": "#/$defs/relativePath" },
+            "sbom": { "$ref": "#/$defs/relativePath" }
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "relativePath": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 1024,
+      "pattern": "^(?!/)(?![A-Za-z]:[\\\\/])(?![A-Za-z][A-Za-z0-9+.-]*:)(?!.*(?:^|[\\\\/])\\.\\.(?:[\\\\/]|$))[^\\u0000]+$"
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["executable"],
+      "properties": {
+        "executable": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 512,
+          "pattern": "^[^\\u0000]+$"
+        },
+        "args": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "type": "string",
+            "maxLength": 2048,
+            "pattern": "^[^\\u0000]*$"
+          },
+          "default": []
+        },
+        "timeoutMs": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 900000,
+          "default": 120000
+        }
+      }
+    },
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "lane", "command"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$"
+        },
+        "lane": {
+          "enum": [
+            "development-regression",
+            "contract-conformance",
+            "capability-conformance",
+            "procedure-conformance",
+            "package",
+            "runtime-agent",
+            "performance"
+          ]
+        },
+        "command": { "$ref": "#/$defs/command" }
+      }
+    },
+    "carrier": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "path"],
+      "properties": {
+        "kind": {
+          "enum": [
+            "library",
+            "cli",
+            "mcp",
+            "api",
+            "skill",
+            "codex-plugin",
+            "human-app"
+          ]
+        },
+        "path": { "$ref": "#/$defs/relativePath" }
+      }
+    },
+    "runtimeProbe": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "tool", "arguments", "expectation", "effects"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9](?:[a-z0-9.-]{0,62}[a-z0-9])?$"
+        },
+        "tool": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128,
+          "pattern": "^[^\\u0000\\r\\n]+$"
+        },
+        "arguments": {
+          "type": "object",
+          "maxProperties": 128
+        },
+        "expectation": {
+          "enum": ["success", "tool-error", "protocol-error"]
+        },
+        "effects": {
+          "const": "read-only"
+        }
+      }
+    }
+  }
+}

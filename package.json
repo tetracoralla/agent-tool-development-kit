@@ -1,0 +1,48 @@
+{
+  "name": "@openadam/agent-tool-development-kit",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Deterministic developer tooling for building and validating Agent tool products.",
+  "author": "openAdam",
+  "license": "Apache-2.0",
+  "engines": {
+    "node": ">=22"
+  },
+  "bin": {
+    "openadam-dev": "src/cli.mjs"
+  },
+  "files": [
+    ".codex-plugin/",
+    "docs/PRODUCT_MODEL.md",
+    "docs/PROJECT_CONTRACT.md",
+    "docs/REVIEW_CONTRACT.md",
+    "docs/PILOT_MATRIX.md",
+    "schemas/",
+    "skills/",
+    "src/",
+    "templates/",
+    "LICENSE",
+    "NOTICE",
+    "THIRD_PARTY_NOTICES.txt",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.mjs",
+    "check:syntax": "node --check src/*.mjs scripts/*.mjs test/*.test.mjs",
+    "check:schema": "node scripts/check-schema.mjs",
+    "build:component": "node scripts/build-developer-component.mjs --replace",
+    "measure:self": "node scripts/measure-developer-kit.mjs",
+    "check:distribution": "node scripts/check-distribution.mjs",
+    "check": "npm run check:syntax && npm test && npm run check:schema && npm run check:distribution"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.30.0",
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "tar-stream": "^3.2.1"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.12"
+  }
+}

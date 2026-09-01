@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "openadam.agent-tool-project.v0.1",
+  "id": __PROJECT_ID_JSON__,
+  "version": "0.1.0",
+  "name": __DISPLAY_NAME_JSON__,
+  "summary": __SUMMARY_JSON__,
+  "documents": {
+    "productModel": "docs/PRODUCT_MODEL.md",
+    "reviewContract": "docs/REVIEW_CONTRACT.md"
+  },
+  "checks": [
+    {
+      "id": "development",
+      "lane": "development-regression",
+      "command": {
+        "executable": "npm",
+        "args": ["run", "check"],
+        "timeoutMs": 180000
+      }
+    }
+  ],
+  "carriers": [
+    { "kind": "cli", "path": "src/cli.mjs" },
+    { "kind": "mcp", "path": "src/mcp-server.mjs" },
+    { "kind": "codex-plugin", "path": "plugins/__PLUGIN_ID__/.codex-plugin/plugin.json" },
+    { "kind": "skill", "path": "plugins/__PLUGIN_ID__/skills/__PLUGIN_ID__/SKILL.md" }
+  ],
+  "package": {
+    "componentId": "__PLUGIN_ID__",
+    "command": {
+      "executable": "node",
+      "args": ["scripts/package-component.mjs"],
+      "timeoutMs": 120000
+    },
+    "artifact": "dist/__PLUGIN_ID__-0.1.0.tar.gz",
+    "integration": "packaging/agent-host-integration.json",
+    "legal": {
+      "spdx": __LICENSE_JSON__,
+      "license": "LICENSE",
+      "notice": "NOTICE",
+      "thirdPartyNotices": "THIRD_PARTY_NOTICES.txt",
+      "sbom": "sbom.spdx.json"
+    },
+    "probes": [
+      {
+        "id": "scaffold-valid",
+        "tool": __OPERATION_JSON__,
+        "arguments": { "value": "replace-with-one-real-valid-input" },
+        "expectation": "success",
+        "effects": "read-only"
+      },
+      {
+        "id": "scaffold-invalid",
+        "tool": __OPERATION_JSON__,
+        "arguments": {},
+        "expectation": "protocol-error",
+        "effects": "read-only"
+      }
+    ]
+  }
+}
