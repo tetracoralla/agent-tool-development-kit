@@ -70,10 +70,21 @@ frequency into a Capability, product ranking, architecture decision, or
 approval.
 
 An already-consented Agent Host usage snapshot may supply neutral names,
-counts, freshness, failures, latency, and context-cost leads. Session content
-requires its own explicit scope. Neither source chooses the layer. The detailed
-method and non-normative proposal asset live in the versioned Developer Skill
-so Codex and Claude receive the same guidance as the CLI compatibility set.
+counts, freshness, failures, latency, activity spans, token measurements, and
+context-cost leads. The Agent starts with current Skill inventory and bounded
+task/conversation summaries, then opens only the selected histories needed to
+test one hypothesis. Session content and any remote-model disclosure require
+their own explicit scope. Raw transcripts do not enter the provider repository.
+
+The snapshot's observation-coverage map controls what may be claimed. A tool
+call can be observed, but an available Skill inventory is not Skill activation;
+passive records do not reveal why a tool was skipped, the semantic effect of a
+result, or whether the Agent adopted it. Consequential claims require a
+contemporaneous explicit Agent assessment or a controlled baseline/treatment
+task with a task-native outcome check; otherwise they stay unknown. Neither
+source chooses the layer. The detailed method and non-normative proposal asset
+live in the versioned Developer Skill so Codex and Claude receive the same
+guidance as the CLI compatibility set.
 
 ### Start a new tool
 

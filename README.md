@@ -41,6 +41,17 @@ tools, and produces a working proposal for the developer to accept or reject.
 It does not monitor the device, crawl unrelated history, or rank candidates by
 frequency.
 
+The low-disclosure route starts from current Skill inventory and bounded task
+or conversation summaries, then reads only selected histories needed to test a
+candidate. Agent Host telemetry can contribute current tool-call, outcome,
+token, activity, freshness, and catalog-cost measurements when its coverage
+says they are available. It does not establish Skill activation, why a tool was
+not used, the semantic effect of a result, or whether the Agent adopted it.
+Those questions need an explicit contemporaneous Agent assessment or a
+controlled baseline/treatment task with a task-native result check; otherwise
+the proposal leaves them unknown. Raw transcripts are not copied into the
+provider project.
+
 For a new Node MCP provider, inspect the current authoring interface and first
 preview the complete scaffold without writing it:
 

@@ -40,6 +40,12 @@ discovery pass from the current product model and visible commands.
   composition checks as applicable, without copying either standard.
 - Candidate lint may reject an Agent-authored proposal but never chooses a
   layer, route, provider, claim, readiness state, or next action.
+- Opportunity discovery starts with bounded Skill inventory and task/session
+  summaries, opens only selected authorized histories, persists no raw
+  transcript, and preserves the difference between observed tool calls and
+  unavailable Skill activation, non-use reason, semantic effect, or result
+  adoption. A consequential adoption/effect claim requires a controlled task-
+  native comparison or contemporaneous explicit Agent assessment.
 - Direct Runtime compatibility is reported separately from semantic
   conformance, installed availability, credentials, permissions, endpoint
   health, and business acceptance.
@@ -50,7 +56,9 @@ discovery pass from the current product model and visible commands.
   verify CLI and Skill versions agree.
 - In fresh Codex and Claude sessions, issue ordinary new-project and
   existing-project requests; record Skill activation, CLI calls, retries,
-  generic fallback, and result bytes.
+  generic fallback, and result bytes. Use host-native activation observations
+  when available; otherwise report activation from the controlled Agent trace,
+  not from passive Skill inventory.
 - The ordinary Agent catalog must not gain a persistent Developer Kit MCP tool.
   If a developer-only MCP adapter exists later, measure its complete catalog
   cost and verify disabled-state absence.

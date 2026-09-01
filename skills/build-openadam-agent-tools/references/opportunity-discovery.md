@@ -29,6 +29,14 @@ task, causation, opportunity, product value, or the right layer. Do not read the
 Observer database or provider event files as a shortcut around a missing
 product result or collection permission.
 
+Start from summaries or digests when the host provides them. Escalate to one
+selected history only when its task meaning or contradiction cannot be tested
+from the summary. Keep raw transcript text out of repositories and generated
+proposals; record a stable host task reference, timestamp, and a short derived
+observation instead. If the Agent runtime would transmit local history to a
+remote model, that disclosure is a separate privacy choice and cannot be
+inferred from filesystem readability.
+
 ## Extract task-native observations
 
 For each selected example, record only what is needed to test a product
@@ -46,6 +54,20 @@ hypothesis:
 Cluster examples by semantic task. Two identical shell commands can serve
 different jobs, while different command sequences can implement the same
 operation. Frequency is a lead, never an automatic rank or nomination.
+
+Use this coverage table before interpreting operational data:
+
+| Question | Passive Observer | Additional route |
+| --- | --- | --- |
+| Was a named tool invoked? | Supported when the host record exposes the call | None |
+| Did the runtime complete, error, or cancel? | Partially supported by provider records | Reproduce when status is absent |
+| How many tokens or bytes were associated? | Provider-specific and often partial | Preserve each provider's semantics |
+| Was a Skill activated? | Unavailable unless the host exposes an authoritative activation event | Host-native usage result or explicit Agent assessment |
+| Why was a tool not used? | Not observable from absence | Controlled baseline/treatment or explicit Agent assessment |
+| Did the result have the intended effect? | Not established by completion | Inspect the task-native artifact or external state |
+| Did the Agent accept or rely on the result? | Not established by a later message | Define and check an explicit downstream observable |
+
+Never encode unavailable answers as zero, false, or rejected.
 
 ## Test the opportunity before choosing a layer
 
@@ -102,3 +124,25 @@ generated scores, and approval claims out of `agent-tool.json`.
 Finish by reporting what sources were examined, what may still contradict the
 proposal, which layer and carrier choices remain judgments, and which current
 checks actually ran.
+
+## Local self-dogfood before external handoff
+
+Before claiming that an external developer can repeat the method, run one
+current local case end to end:
+
+1. inspect an owned Skill or current tool catalog without scanning siblings by
+   inference;
+2. review bounded recent task summaries and select one real task hypothesis;
+3. compare the hypothesis with current Agent Host observations and name every
+   unavailable field;
+4. produce one proposal with a contradiction and a simpler alternative;
+5. when implementation is authorized, check, pack, probe, and install only the
+   immutable artifact;
+6. run a fresh unnamed Agent task from a development repository and verify both
+   the task-native outcome and that execution resolved outside the source tree;
+7. run a controlled comparison when making a discovery, effect, adoption, or
+   performance claim.
+
+If the case ends with “improve the Skill” or “use an existing provider,” that
+is a valid result. Do not manufacture a new Provider merely to complete the
+exercise.

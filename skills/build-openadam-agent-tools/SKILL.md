@@ -38,6 +38,30 @@ inputs or outputs as leads. Produce a falsifiable opportunity proposal using
 ranking, Capability nomination, or approval. Search for existing tools and
 contracts and record contradictions before proposing implementation.
 
+Prefer a progressive local route: current Skill inventory, bounded task or
+conversation summaries, then only the selected histories needed to test one
+hypothesis. If the installed Agent Host operations Skill is available, start
+with its compact snapshot and preserve its timestamps and coverage. Tool calls,
+runtime outcomes, token totals, session spans, and catalog cost are mechanical
+observations. Skill activation, why a tool was skipped, the semantic effect of
+its result, and whether that result was accepted remain unavailable unless the
+named Agent host exposes an authoritative event or a separate current
+assessment measures them.
+
+For a consequential non-use question, do not invent a reason from a zero. Use
+one of these separately labeled routes:
+
+- ask the task Agent for an explicit contemporaneous assessment, retaining it
+  as Agent-authored judgment rather than telemetry;
+- run the same bounded task in controlled baseline and treatment environments,
+  then grade a task-native artifact or state with an independently specified
+  deterministic check;
+- leave the reason, effect, or adoption status unknown.
+
+The opportunity proposal must say which route supplied each claim. A completed
+tool call is not a correct task result, and a later Agent message is not proof
+that the tool output was used.
+
 ## Keep the layers separate
 
 - Put unresolved task judgment, ambiguity handling, stopping behavior, and

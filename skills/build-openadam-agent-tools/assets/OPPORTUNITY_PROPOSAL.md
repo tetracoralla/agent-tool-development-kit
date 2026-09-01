@@ -18,6 +18,22 @@
 - Manual glue, retries, failures, and cost:
 - Redactions, missing sources, and sampling limits:
 
+## Observation and assessment map
+
+| Claim | Status | Current source and timestamp | Authority and limits |
+| --- | --- | --- | --- |
+| Tool invocation | | | |
+| Runtime outcome | | | |
+| Token, payload, latency, or context cost | | | |
+| Skill activation | | | |
+| Reason for non-use | | | |
+| Task-native effect | | | |
+| Result adoption or downstream use | | | |
+
+- Controlled baseline/treatment, if any:
+- Explicit Agent-authored assessment, if any:
+- Unknowns that must remain unknown:
+
 ## Contradictions and alternatives
 
 - Examples that do not share the proposed meaning:
