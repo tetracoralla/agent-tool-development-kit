@@ -4,6 +4,12 @@
 > Procedure nomination, readiness claim, publication approval, or evidence by
 > itself. Remove private excerpts and secrets before storing it in a repository.
 
+The executable v0.1 proposal is JSON. Obtain its schema with
+`openadam-dev opportunity schema --json`, create a source-bound draft with
+`openadam-dev opportunity init`, and validate the completed draft with
+`openadam-dev opportunity check`. This Markdown file is only a readable
+worksheet for the same questions.
+
 ## Candidate task
 
 - User and independently useful job:
@@ -12,7 +18,7 @@
 
 ## Authorized observations
 
-- Permitted sources and time range:
+- Permitted material set, exact files/references, and time range:
 - Source references and freshness:
 - Repeated objects and operations:
 - Manual glue, retries, failures, and cost:
@@ -65,5 +71,5 @@
 - Negative and boundary cases:
 - Package and isolated probe:
 - Performance and Agent context baselines:
-- Fresh Codex/Claude observation still required:
+- Fresh supported-Agent observation still required:
 - Owner-only license, privacy, credential, spending, or publication decisions:

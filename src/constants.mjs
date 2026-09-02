@@ -1,11 +1,16 @@
 export const PROJECT_SCHEMA_VERSION = 'openadam.agent-tool-project.v0.1'
-export const DEVELOPER_KIT_VERSION = '0.1.2'
+export const MATERIAL_SET_SCHEMA_VERSION = 'openadam.authorized-material-set.v0.1'
+export const OPPORTUNITY_PROPOSAL_SCHEMA_VERSION = 'openadam.agent-tool-opportunity-proposal.v0.1'
+export const DEVELOPER_KIT_VERSION = '0.1.3'
 export const PROJECT_FILE = 'agent-tool.json'
 export const MAX_INPUT_BYTES = 1024 * 1024
 export const MAX_OUTPUT_BYTES = 64 * 1024
 export const MAX_DISCOVERED_FILES = 128
 export const MAX_WALK_ENTRIES = 4096
 export const MAX_WALK_DEPTH = 8
+export const MAX_MATERIAL_FILES = 64
+export const MAX_MATERIAL_FILE_BYTES = 1024 * 1024
+export const MAX_MATERIAL_TOTAL_BYTES = 8 * 1024 * 1024
 export const DEFAULT_COMMAND_TIMEOUT_MS = 120_000
 export const MAX_CHECK_OUTPUT_BYTES = 1024 * 1024
 export const MAX_CHECK_PREVIEW_BYTES = 2048

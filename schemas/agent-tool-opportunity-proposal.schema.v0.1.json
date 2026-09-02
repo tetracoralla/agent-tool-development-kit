@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:openadam:schema:agent-tool-opportunity-proposal:v0.1",
+  "title": "Agent tool opportunity proposal",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "materialSet",
+    "candidateTask",
+    "observations",
+    "observationCoverage",
+    "counterevidence",
+    "alternatives",
+    "productBoundary",
+    "layerHypothesis",
+    "validationPlan",
+    "unknowns"
+  ],
+  "properties": {
+    "schemaVersion": {
+      "const": "openadam.agent-tool-opportunity-proposal.v0.1"
+    },
+    "materialSet": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "digest"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9._-]{1,79}$"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[a-f0-9]{64}$"
+        }
+      }
+    },
+    "candidateTask": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["userJob", "expectedOutcome", "currentWorkaround"],
+      "properties": {
+        "userJob": { "$ref": "#/$defs/paragraph" },
+        "expectedOutcome": { "$ref": "#/$defs/paragraph" },
+        "currentWorkaround": { "$ref": "#/$defs/paragraph" }
+      }
+    },
+    "observations": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 64,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "kind", "sourceIds", "statement", "limits"],
+        "properties": {
+          "id": { "$ref": "#/$defs/id" },
+          "kind": { "enum": ["observation", "inference", "unknown"] },
+          "sourceIds": {
+            "type": "array",
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/id" }
+          },
+          "statement": { "$ref": "#/$defs/paragraph" },
+          "limits": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 8,
+            "items": { "$ref": "#/$defs/shortText" }
+          }
+        }
+      }
+    },
+    "observationCoverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "toolInvocation",
+        "runtimeOutcome",
+        "tokenOrContextCost",
+        "skillActivation",
+        "nonUseReason",
+        "semanticEffect",
+        "resultAdoption"
+      ],
+      "properties": {
+        "toolInvocation": { "$ref": "#/$defs/coverage" },
+        "runtimeOutcome": { "$ref": "#/$defs/coverage" },
+        "tokenOrContextCost": { "$ref": "#/$defs/coverage" },
+        "skillActivation": { "$ref": "#/$defs/coverage" },
+        "nonUseReason": { "$ref": "#/$defs/coverage" },
+        "semanticEffect": { "$ref": "#/$defs/coverage" },
+        "resultAdoption": { "$ref": "#/$defs/coverage" }
+      }
+    },
+    "counterevidence": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "sourceIds", "statement"],
+        "properties": {
+          "kind": {
+            "enum": ["contradiction", "counterexample", "coverage-limit", "none-found-within-scope"]
+          },
+          "sourceIds": {
+            "type": "array",
+            "maxItems": 8,
+            "uniqueItems": true,
+            "items": { "$ref": "#/$defs/id" }
+          },
+          "statement": { "$ref": "#/$defs/paragraph" }
+        }
+      }
+    },
+    "alternatives": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["kind", "description", "tradeoff"],
+        "properties": {
+          "kind": {
+            "enum": [
+              "existing-tool",
+              "skill-change",
+              "repository-helper",
+              "existing-capability",
+              "existing-procedure",
+              "provider-native-tool",
+              "other"
+            ]
+          },
+          "description": { "$ref": "#/$defs/paragraph" },
+          "tradeoff": { "$ref": "#/$defs/paragraph" }
+        }
+      }
+    },
+    "productBoundary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "deterministicKernel",
+        "agentOrUserJudgment",
+        "inputs",
+        "outputs",
+        "effects",
+        "permissionsAndPrivacy",
+        "limitsAndRecovery",
+        "stableErrors",
+        "humanAcceptance"
+      ],
+      "properties": {
+        "deterministicKernel": { "$ref": "#/$defs/paragraph" },
+        "agentOrUserJudgment": { "$ref": "#/$defs/paragraph" },
+        "inputs": { "$ref": "#/$defs/nonEmptyTextList" },
+        "outputs": { "$ref": "#/$defs/nonEmptyTextList" },
+        "effects": { "$ref": "#/$defs/nonEmptyTextList" },
+        "permissionsAndPrivacy": { "$ref": "#/$defs/nonEmptyTextList" },
+        "limitsAndRecovery": { "$ref": "#/$defs/nonEmptyTextList" },
+        "stableErrors": { "$ref": "#/$defs/nonEmptyTextList" },
+        "humanAcceptance": { "$ref": "#/$defs/paragraph" }
+      }
+    },
+    "layerHypothesis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["kind", "rationale"],
+      "properties": {
+        "kind": {
+          "enum": ["undecided", "skill", "provider-native-tool", "capability", "procedure", "model-backed-provider"]
+        },
+        "rationale": { "$ref": "#/$defs/paragraph" },
+        "namedContract": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 240
+        },
+        "carriers": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "enum": ["skill", "cli", "mcp", "api", "library", "human-app", "direct-runtime"] }
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "kind": { "enum": ["capability", "procedure"] } },
+            "required": ["kind"]
+          },
+          "then": {
+            "properties": {
+              "namedContract": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 240
+              }
+            },
+            "required": ["namedContract"]
+          },
+          "else": { "not": { "required": ["namedContract"] } }
+        }
+      ]
+    },
+    "validationPlan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["smallestPilot", "negativeAndBoundaryCases", "packageAndIsolatedProbe", "performanceAndContext", "freshAgent"],
+      "properties": {
+        "smallestPilot": { "$ref": "#/$defs/paragraph" },
+        "negativeAndBoundaryCases": { "$ref": "#/$defs/nonEmptyTextList" },
+        "packageAndIsolatedProbe": { "$ref": "#/$defs/paragraph" },
+        "performanceAndContext": { "$ref": "#/$defs/paragraph" },
+        "freshAgent": { "$ref": "#/$defs/paragraph" }
+      }
+    },
+    "unknowns": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 32,
+      "items": { "$ref": "#/$defs/shortText" }
+    }
+  },
+  "$defs": {
+    "id": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{1,79}$"
+    },
+    "shortText": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 500
+    },
+    "paragraph": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 2000
+    },
+    "nonEmptyTextList": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 16,
+      "items": { "$ref": "#/$defs/shortText" }
+    },
+    "coverage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "basis", "sourceIds"],
+      "properties": {
+        "status": { "enum": ["observed", "partial", "unavailable", "not-observed", "unknown"] },
+        "basis": { "$ref": "#/$defs/shortText" },
+        "sourceIds": {
+          "type": "array",
+          "maxItems": 8,
+          "uniqueItems": true,
+          "items": { "$ref": "#/$defs/id" }
+        }
+      }
+    }
+  }
+}

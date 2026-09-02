@@ -31,7 +31,14 @@ try {
   assert.equal(componentSbom.packages.find((item) => item.SPDXID === 'SPDXRef-RootPackage')?.licenseDeclared, 'Apache-2.0')
   assert.match(await readFile(join(temporary, 'LICENSE'), 'utf8'), /Apache License\s+Version 2\.0/u)
   const version = JSON.parse((await execFileAsync(process.execPath, [runtime, '--version', '--json'], { maxBuffer: 64 * 1024 })).stdout)
-  assert.deepEqual(version, { schemaVersion: 'openadam.developer-kit-version.v0.1', status: 'ok', version: '0.1.2' })
+  assert.deepEqual(version, { schemaVersion: 'openadam.developer-kit-version.v0.1', status: 'ok', version: '0.1.3' })
+  const materialSchema = JSON.parse((await execFileAsync(process.execPath, [runtime, 'materials', 'schema', '--json'], { maxBuffer: 64 * 1024 })).stdout)
+  const opportunitySchema = JSON.parse((await execFileAsync(process.execPath, [runtime, 'opportunity', 'schema', '--json'], { maxBuffer: 64 * 1024 })).stdout)
+  assert.equal(materialSchema.$id, 'urn:openadam:schema:authorized-material-set:v0.1')
+  assert.equal(opportunitySchema.$id, 'urn:openadam:schema:agent-tool-opportunity-proposal:v0.1')
+  await stat(join(temporary, 'schemas/authorized-material-set.schema.v0.1.json'))
+  await stat(join(temporary, 'schemas/agent-tool-opportunity-proposal.schema.v0.1.json'))
+  await stat(join(temporary, 'examples/authorized-materials.example.json'))
 
   const plugin = JSON.parse(await readFile(join(root, '.codex-plugin/plugin.json'), 'utf8'))
   assert.equal(plugin.name, 'agent-tool-development-kit')
@@ -48,6 +55,9 @@ try {
   for (const required of [
     'src/cli.mjs',
     'schemas/agent-tool-project.schema.v0.1.json',
+    'schemas/authorized-material-set.schema.v0.1.json',
+    'schemas/agent-tool-opportunity-proposal.schema.v0.1.json',
+    'examples/authorized-materials.example.json',
     'templates/node-mcp-provider/agent-tool.json',
     '.codex-plugin/plugin.json',
     'skills/build-openadam-agent-tools/SKILL.md',

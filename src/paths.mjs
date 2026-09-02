@@ -59,3 +59,29 @@ export async function resolveDeclaredFile(root, declaredPath, label = 'declared 
   if (!info.isFile()) throw new DeveloperKitError('FILE_INVALID', `${label} is not a regular file.`, { path: safe })
   return targetReal
 }
+
+export async function resolveDeclaredDirectory(root, declaredPath, label = 'declared directory') {
+  const safe = requireRelativePath(declaredPath, label)
+  const rootReal = await requireDirectory(root)
+  const parts = safe.replaceAll('\\', '/').split('/').filter((part) => part !== '' && part !== '.')
+  let current = rootReal
+  for (const part of parts) {
+    current = resolve(current, part)
+    if (!inside(rootReal, current)) throw new DeveloperKitError('PATH_ESCAPE', `${label} escapes the workspace root.`)
+    let info
+    try {
+      info = await lstat(current)
+    } catch (error) {
+      if (error?.code === 'ENOENT') throw new DeveloperKitError('ROOT_NOT_FOUND', `${label} was not found.`, { path: safe })
+      throw error
+    }
+    if (info.isSymbolicLink()) {
+      throw new DeveloperKitError('PATH_SYMLINK_REJECTED', `${label} may not contain a symbolic link.`, { path: safe })
+    }
+  }
+  const targetReal = await realpath(current)
+  if (!inside(rootReal, targetReal)) throw new DeveloperKitError('PATH_ESCAPE', `${label} escapes the workspace root.`)
+  const info = await stat(targetReal)
+  if (!info.isDirectory()) throw new DeveloperKitError('ROOT_INVALID', `${label} is not a directory.`, { path: safe })
+  return targetReal
+}

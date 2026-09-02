@@ -1,4 +1,4 @@
 interface:
   display_name: "Build OpenAdam Agent Tools"
-  short_description: "Create, check, package, and probe one Agent tool"
-  default_prompt: "Use $build-openadam-agent-tools to discover or turn one explicit tool task into a falsifiable proposal and a checked, sealed, Agent-ready provider product without inventing standards or a generic invocation layer."
+  short_description: "Analyze selected material and build one Agent tool"
+  default_prompt: "Use $build-openadam-agent-tools to analyze only the materials I explicitly authorize, or turn one explicit tool task into a falsifiable proposal and a checked, sealed, Agent-ready provider product without inventing standards or a generic invocation layer."

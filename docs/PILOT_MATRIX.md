@@ -13,9 +13,11 @@ substitution claim, or publication approval.
 | Procedure, Node | Procedure Contracts `run-conformance.mjs` with Dependency Preflight | three current result-conformance cases passed on 2026-09-01; local pilot only |
 | Host distribution | isolated Agent Host release build with `developer` profile | 13-component catalog validated; Developer Kit remained outside `agentComponents` |
 | Codex carrier | real Codex CLI with an empty temporary `CODEX_HOME` | Skill-only plugin, generated exact CLI launcher, no `.mcp.json`, doctor OK, owned uninstall |
-| Claude carrier | real Claude CLI with an empty temporary `CLAUDE_CONFIG_DIR` | immutable Skill link, exact CLI version probe, doctor OK, owned MCP/Skill uninstall |
-| Developer Kit performance | packaged `0.1.2` component, `npm run measure:self -- --iterations 20 --concurrency 4` | 2026-09-02 local baseline: 11,484-byte lazy CLI; 45.556 ms cold; 45.155 ms warm p50 / 46.520 ms p95; 78.62 bounded four-way starts/s; 39,223,296-byte one-process RSS; 6,275 default Skill bytes plus 11,153 on-demand discovery/worksheet bytes; zero MCP servers; no threshold and no model call |
-| Opportunity discovery | versioned Skill reference, non-normative proposal asset, and bounded local dogfood | explicit source consent, untrusted-session handling, supported-inventory routing, contradictions, existing-tool search, Provider/Skill/Capability/Procedure separation, and implementation handoff are packaged; one local run sampled 50 recent task summaries and four selected task histories without persisting raw transcripts; no automatic history crawl, recursive Skill/session-root inventory, ranking, or nomination |
+| ZCode carrier | Agent Host isolated carrier checks with an empty ZCode configuration root | immutable Skill projection and exact CLI launcher are the primary external-developer route; current `0.1.3` admission is rechecked in the Agent Host release lane before this row is treated as current installed evidence |
+| Optional Claude-compatible carrier | real Claude CLI with an empty temporary `CLAUDE_CONFIG_DIR` | immutable Skill link, exact CLI version probe, doctor OK, owned MCP/Skill uninstall; no official Claude model dependency or natural-selection claim |
+| Developer Kit performance | packaged `0.1.3` component, `npm run measure:self -- --iterations 30 --concurrency 8` | 2026-09-02 local baseline: 15,813-byte lazy CLI; 47.930 ms cold; 47.745 ms warm p50 / 50.489 ms p95; 98.393 bounded eight-way starts/s; 39,436,288-byte one-process RSS; 7,599 default Skill bytes plus 13,599 on-demand discovery/worksheet bytes; zero MCP servers; material inspect 93.971 ms, opportunity init 105.157 ms, and opportunity check 106.529 ms; no threshold and no model call |
+| Authorized material and opportunity contract | closed schemas plus packaged `materials inspect` and `opportunity init/check` | exact selected local files or opaque references only; no directory crawl or reference fetch; bounded hashes bind current bytes; proposal check validates source bindings, counterevidence, simpler alternatives, and unknowns without recommending a layer or approving development |
+| Local opportunity dogfood | three selected archived Codex task references, one current Agent Host snapshot reference, and two exact installed ZCode Skill files | the checked proposal retained all six sources and concluded only a Skill-layer hypothesis: reuse current Armorial before considering another Provider, Capability, or Procedure; tool invocation and runtime outcome were partial, while Skill activation, non-use reason, semantic effect, and result adoption remained unavailable or not observed |
 | Fresh Codex opportunity case | temporary Codex Home containing only installed Developer Kit `0.1.1`, one owner-authorized bounded summary, ordinary unbranded prompt | Agent naturally activated the installed Skill and proposed existing Armorial Skill/launcher reuse rather than a duplicate Provider, Capability, or Procedure; non-use, effect, quality, and adoption remained unknown. The multi-turn task reported 199,244 cumulative input Tokens, 171,776 cached, and 3,904 output; this is whole-harness task cost, not Skill bytes. Version `0.1.2` closes the broad generic Skill-root inventory attempt observed in this run. |
 
 The JavaScript and Python package/probe routes exercise two implementation
@@ -24,19 +26,18 @@ repositories; the Developer Kit stores only the exact conformance argv selected
 by the provider repository. A declared Capability or Procedure manifest fails
 project validation when its dedicated conformance lane is absent.
 
-The bounded local opportunity-discovery run also used one already-consented
-Agent Host snapshot as a neutral lead. It found repeated deterministic
-packaging/host-parity work, but also repeated review and product-selection work
-whose essential meaning remains judgment. It therefore produced no new
-Capability or Procedure declaration. Counts and task recurrence were not used
-as rankings, and no raw prompt, argument, result, or session transcript was
-copied into this repository.
+The bounded local opportunity-discovery run used exact caller-selected sources,
+including one current Agent Host snapshot, as neutral leads. It did not copy
+raw task transcripts into this repository and did not crawl archived tasks,
+Skills, repositories, or directories. The selected Agent authored the proposal;
+the deterministic check only verified the closed shape, current material
+binding, contradictions, alternatives, and preserved unknowns. Counts and task
+recurrence were not used as rankings.
 
 Still outside these observations: a public registry install, Developer ID
 signed/notarized distribution, Linux and Windows host flows, another physical
 device, exhaustive history mining, credentials, external privacy/legal
-authorization, and owner business/experience acceptance. Fresh Claude natural
-selection remains blocked before model execution by repeated HTTP 502 responses
-from the configured local inference gateway despite healthy installed Skill
-projection. Local timings and one fresh Codex case are current observations,
-not portable performance or utility claims.
+authorization, and owner business/experience acceptance. ZCode fresh-model
+selection remains a separate deferred validation lane when the configured model
+quota is available. Local timings and one older fresh Codex case are current
+machine observations, not portable performance or utility claims.

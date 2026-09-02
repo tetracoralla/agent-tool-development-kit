@@ -40,12 +40,19 @@ discovery pass from the current product model and visible commands.
   composition checks as applicable, without copying either standard.
 - Candidate lint may reject an Agent-authored proposal but never chooses a
   layer, route, provider, claim, readiness state, or next action.
-- Opportunity discovery starts with bounded Skill inventory and task/session
-  summaries, opens only selected authorized histories, persists no raw
-  transcript, and preserves the difference between observed tool calls and
-  unavailable Skill activation, non-use reason, semantic effect, or result
-  adoption. A consequential adoption/effect claim requires a controlled task-
-  native comparison or contemporaneous explicit Agent assessment.
+- Opportunity discovery starts from one closed authorized-material manifest.
+  Local files and repository/Skill selections are exact and bounded; reference
+  sources are not fetched; directories, private histories, sibling repositories,
+  and generic Skill roots are not crawled. The result persists no raw content
+  and preserves the difference between observed tool calls and unavailable
+  Skill activation, non-use reason, semantic effect, or result adoption. A
+  consequential adoption/effect claim requires a controlled task-native
+  comparison or contemporaneous explicit Agent assessment.
+- Proposal init binds current material bytes but produces an explicitly
+  incomplete draft. Proposal check rejects placeholders, material drift,
+  unlisted source references, missing counterevidence, missing simpler
+  alternatives, and lost unknowns while never choosing a layer or approving
+  development.
 - Direct Runtime compatibility is reported separately from semantic
   conformance, installed availability, credentials, permissions, endpoint
   health, and business acceptance.
@@ -54,8 +61,8 @@ discovery pass from the current product model and visible commands.
 
 - Install the packaged developer environment into isolated Agent Host state and
   verify CLI and Skill versions agree.
-- In fresh Codex and Claude sessions, issue ordinary new-project and
-  existing-project requests; record Skill activation, CLI calls, retries,
+- In fresh Codex and ZCode sessions, issue ordinary authorized-material,
+  new-project, and existing-project requests; record Skill activation, CLI calls, retries,
   generic fallback, and result bytes. Use host-native activation observations
   when available; otherwise report activation from the controlled Agent trace,
   not from passive Skill inventory.
@@ -93,7 +100,8 @@ Report separately:
 - project-contract and mutation safety;
 - Capability and Procedure conformance, when declared;
 - isolated Codex runtime;
-- isolated Claude runtime;
+- isolated ZCode runtime;
+- optional Claude compatibility runtime when a user-owned supplier is available;
 - performance, load, and Agent economics;
 - external documentation and fresh-developer usability;
 - owner business and experience acceptance.

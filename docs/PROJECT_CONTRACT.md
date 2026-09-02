@@ -10,6 +10,30 @@ Procedure standard.
 The initial schema identity is `openadam.agent-tool-project.v0.1`. The schema
 will be implemented under `schemas/` and versioned when its meaning changes.
 
+## Pre-project discovery contracts
+
+Two separate v0.1 contracts support discovery before a product repository is
+chosen. They are not part of `agent-tool.json` and do not authorize creation.
+
+`openadam.authorized-material-set.v0.1` records one purpose, intended processing
+boundary, and 1–32 caller-selected sources. A local source is either one exact
+file or an exact list of up to 64 files below one selected directory. A
+reference source records a supported Agent-host or external identifier but is
+never fetched by the CLI. Files are bounded to 1 MiB each and 8 MiB in total;
+links, parent traversal, absolute paths, repeated files/references, changed
+bytes during inspection, and directory crawling fail closed. Inspection emits
+only relative paths, digests, byte counts, and source metadata.
+
+`openadam.agent-tool-opportunity-proposal.v0.1` binds one proposal to the
+current material-set id and digest. It requires task observations with source
+references and limits, a seven-part observation-coverage map, counterevidence,
+a simpler alternative, explicit product and human-judgment boundaries, a
+caller-authored layer hypothesis, a falsifiable validation plan, and preserved
+unknowns. The check rejects generated TODOs, unknown source ids, stale material
+bytes, duplicate observation ids, and unreferenced observed claims. It never
+returns a recommendation, score, rank, readiness, approval, repair priority, or
+publication state.
+
 ## Required facts
 
 The first version records only facts with current consumers:

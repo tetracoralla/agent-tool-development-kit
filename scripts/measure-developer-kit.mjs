@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, readdir, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, readFile, readdir, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { performance } from 'node:perf_hooks'
@@ -9,6 +9,7 @@ import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import { extractArchive } from '../src/probe.mjs'
 import { buildDeveloperComponent } from './build-developer-component.mjs'
+import { DEVELOPER_KIT_VERSION } from '../src/constants.mjs'
 
 const execFileAsync = promisify(execFile)
 const repositoryRoot = fileURLToPath(new URL('../', import.meta.url))
@@ -49,6 +50,13 @@ function distribution(values) {
   }
 }
 
+function completeOpportunity(value) {
+  if (typeof value === 'string') return value.startsWith('TODO:') ? `Completed: ${value.slice(5).trim()}` : value
+  if (Array.isArray(value)) return value.map(completeOpportunity)
+  if (value !== null && typeof value === 'object') return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, completeOpportunity(item)]))
+  return value
+}
+
 function isolatedEnvironment(home) {
   const names = ['PATH', 'TMPDIR', 'TMP', 'TEMP', 'LANG', 'LC_ALL', 'SYSTEMROOT', 'COMSPEC', 'PATHEXT']
   return {
@@ -70,8 +78,8 @@ async function invocation(runtime, args, { cwd, home }) {
   })
   const parsed = JSON.parse(result.stdout)
   const succeeded = ['ok', 'ready', 'created'].includes(parsed.status)
-    || (args[0] === 'schema' && typeof parsed.$schema === 'string')
-  if (!succeeded) throw new Error(`packaged CLI command did not succeed: ${args[0] ?? '--version'}`)
+    || typeof parsed.$schema === 'string'
+  if (!succeeded) throw new Error(`packaged CLI command did not succeed: ${args.join(' ') || '--version'}`)
   return {
     durationMs: rounded(performance.now() - started),
     stdoutBytes: Buffer.byteLength(result.stdout),
@@ -139,6 +147,21 @@ async function main() {
     const flows = {}
     flows.schema = await invocation(runtime, ['schema', '--json'], { cwd: workspace, home })
     flows.doctor = await invocation(runtime, ['doctor', '--json'], { cwd: workspace, home })
+    await writeFile(join(workspace, 'selected.md'), '# Selected measurement source\n')
+    await writeFile(join(workspace, 'authorized-materials.json'), `${JSON.stringify({
+      schemaVersion: 'openadam.authorized-material-set.v0.1',
+      id: 'measurement-materials',
+      title: 'Measurement materials',
+      purpose: 'Measure the packaged deterministic material and opportunity route.',
+      intendedProcessing: 'local-only',
+      sources: [{ id: 'selected', role: 'documentation', title: 'Selected source', location: { type: 'local-file', path: 'selected.md' } }],
+    })}\n`)
+    flows.materials = await invocation(runtime, ['materials', 'inspect', '--root', workspace, '--manifest', 'authorized-materials.json', '--json'], { cwd: workspace, home })
+    flows.opportunitySchema = await invocation(runtime, ['opportunity', 'schema', '--json'], { cwd: workspace, home })
+    flows.opportunityInit = await invocation(runtime, ['opportunity', 'init', '--root', workspace, '--materials', 'authorized-materials.json', '--output', 'opportunity.json', '--json'], { cwd: workspace, home })
+    const opportunity = completeOpportunity(JSON.parse(await readFile(join(workspace, 'opportunity.json'), 'utf8')))
+    await writeFile(join(workspace, 'opportunity.json'), `${JSON.stringify(opportunity)}\n`)
+    flows.opportunityCheck = await invocation(runtime, ['opportunity', 'check', '--root', workspace, '--materials', 'authorized-materials.json', '--proposal', 'opportunity.json', '--json'], { cwd: workspace, home })
     flows.initDryRun = await invocation(runtime, [
       'init', 'node-mcp-provider', '--destination', destination, '--id', 'org.example.sample-provider',
       '--package-name', '@example/sample-provider', '--plugin', 'sample-provider', '--operation', 'sample.run',
@@ -163,7 +186,7 @@ async function main() {
     const result = {
       schemaVersion: 'openadam.developer-kit-self-measurement.v0.1',
       status: 'ok',
-      artifact: { version: '0.1.2', carrier: 'packed-developer-kit-component' },
+      artifact: { version: DEVELOPER_KIT_VERSION, carrier: 'packed-developer-kit-component' },
       workload: { iterations, concurrency },
       measurement: {
         cliStartup: { cold, warm: distribution(warm) },

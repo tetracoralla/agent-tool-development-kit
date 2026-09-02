@@ -126,7 +126,7 @@ function integration() {
   return {
     schemaVersion: 'openadam.agent-host-developer-kit-integration.v0.1',
     displayName: 'Agent Tool Development Kit',
-    summary: 'Build, check, package, and probe OpenAdam-compatible Agent tools.',
+    summary: 'Analyze authorized material and build, check, package, and probe OpenAdam-compatible Agent tools.',
     cli: {
       executor: 'suite-node',
       command: 'runtime/openadam-dev.mjs',
@@ -213,6 +213,7 @@ export async function buildDeveloperComponent({ outputPath = DEFAULT_OUTPUT, rep
     await chmod(runtimePath, 0o755)
 
     await cp(join(repositoryRoot, 'schemas'), join(componentRoot, 'schemas'), { recursive: true, force: false, errorOnExist: true })
+    await cp(join(repositoryRoot, 'examples'), join(componentRoot, 'examples'), { recursive: true, force: false, errorOnExist: true })
     await cp(join(repositoryRoot, 'templates'), join(componentRoot, 'templates'), { recursive: true, force: false, errorOnExist: true })
     await mkdir(join(componentRoot, 'docs'), { recursive: true })
     for (const name of ['PRODUCT_MODEL.md', 'PROJECT_CONTRACT.md', 'REVIEW_CONTRACT.md', 'PILOT_MATRIX.md']) {
@@ -244,6 +245,9 @@ export async function buildDeveloperComponent({ outputPath = DEFAULT_OUTPUT, rep
     const identityFiles = [...new Set([
       ...runtimeIdentityFiles,
       'schemas/agent-tool-project.schema.v0.1.json',
+      'schemas/authorized-material-set.schema.v0.1.json',
+      'schemas/agent-tool-opportunity-proposal.schema.v0.1.json',
+      'examples/authorized-materials.example.json',
       'developer-kit/integration.json',
       'marketplace/.agents/plugins/marketplace.json',
       `${PLUGIN_ROOT}/.codex-plugin/plugin.json`,

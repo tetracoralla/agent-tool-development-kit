@@ -17,7 +17,14 @@ test('returns the closed project schema as bounded JSON', async () => {
 test('returns the packaged Developer Kit version without reading the repository', async () => {
   const { stdout } = await execFileAsync(process.execPath, [cli, '--version', '--json'])
   const result = JSON.parse(stdout)
-  assert.deepEqual(result, { schemaVersion: 'openadam.developer-kit-version.v0.1', status: 'ok', version: '0.1.2' })
+  assert.deepEqual(result, { schemaVersion: 'openadam.developer-kit-version.v0.1', status: 'ok', version: '0.1.3' })
+})
+
+test('returns the authorized-material and opportunity schemas without loading a project', async () => {
+  const material = JSON.parse((await execFileAsync(process.execPath, [cli, 'materials', 'schema', '--json'])).stdout)
+  const opportunity = JSON.parse((await execFileAsync(process.execPath, [cli, 'opportunity', 'schema', '--json'])).stdout)
+  assert.equal(material.properties.schemaVersion.const, 'openadam.authorized-material-set.v0.1')
+  assert.equal(opportunity.properties.schemaVersion.const, 'openadam.agent-tool-opportunity-proposal.v0.1')
 })
 
 test('returns stable JSON for invalid CLI input', async () => {
@@ -61,4 +68,21 @@ test('requires every explicit init authoring field', async () => {
     assert.equal(result.error.code, 'CLI_USAGE')
     return true
   })
+})
+
+test('requires explicit bounded-material and opportunity paths', async () => {
+  for (const args of [
+    ['materials', 'inspect', '--json'],
+    ['materials', 'unknown', '--json'],
+    ['opportunity', 'init', '--materials', 'materials.json', '--json'],
+    ['opportunity', 'check', '--materials', 'materials.json', '--json'],
+    ['opportunity', 'unknown', '--json'],
+  ]) {
+    await assert.rejects(execFileAsync(process.execPath, [cli, ...args]), (error) => {
+      const result = JSON.parse(error.stderr)
+      assert.equal(error.code, 2)
+      assert.equal(result.error.code, 'CLI_USAGE')
+      return true
+    })
+  }
 })

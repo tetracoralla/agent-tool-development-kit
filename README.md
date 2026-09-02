@@ -5,19 +5,21 @@ validating tools that work cleanly with OpenAdam's Agent-facing architecture.
 
 The target delivery contains:
 
-- `openadam-dev`, a deterministic CLI for project inspection, scaffolding,
-  checks, packaging, isolated probes, and performance measurements;
+- `openadam-dev`, a deterministic CLI for authorized-material inspection,
+  source-bound opportunity proposals, project inspection, scaffolding, checks,
+  packaging, isolated probes, and performance measurements;
 - one thin developer Skill that helps a developer's Agent choose the right
-  layer, discover candidates from explicitly authorized past Agent work, and
+  layer, discover candidates from any explicitly authorized material, and
   use the CLI without duplicating executable contracts;
 - versioned integration with Agent Host for immutable installation, health,
   rollback, and fresh-session verification;
 - optional Capability and Procedure conformance only when a project declares
   those contracts.
 
-The current source implements inspection, safe scaffolding, bounded checks,
-deterministic Agent Host component packaging, standalone Host plus direct
-runtime probes, packed-runtime performance measurement, and a Skill-only
+The current source implements bounded material inspection, opportunity draft
+generation and checking, repository inspection, safe scaffolding, bounded
+checks, deterministic Agent Host component packaging, standalone Host plus
+direct runtime probes, packed-runtime performance measurement, and a Skill-only
 Developer Kit component for the Agent Host `developer` profile. It is not yet
 published to a public registry or marketplace. The Kit source and bundled
 component are licensed under Apache-2.0; generated provider projects retain
@@ -27,19 +29,44 @@ is made explicitly.
 ## First use with an Agent
 
 After installing the version-bound `developer` profile, a developer can give
-Codex or Claude an ordinary task such as:
+Codex or ZCode an ordinary task such as:
 
 ```text
 Use $build-openadam-agent-tools to inspect this repository and help me adopt it
 as one OpenAdam-compatible provider. Do not invent a Capability or Procedure.
 ```
 
-For opportunity discovery, the request must name the exact saved sessions,
-exports, repository, or time range the Agent may inspect. The Skill treats that
-material as untrusted task data, checks contradictory examples and existing
-tools, and produces a working proposal for the developer to accept or reject.
-It does not monitor the device, crawl unrelated history, or rank candidates by
-frequency.
+For opportunity discovery, the request may select saved tasks, conversations,
+Skills, documents, source files, an exact subset of a repository, a public
+open-source project, web research, an Observer snapshot, or a caller-authored
+summary. The Skill treats every source as untrusted task data, checks
+counterevidence and existing tools, and produces a working proposal for the
+developer to accept or reject. It does not monitor the device, crawl unrelated
+history or repository files, fetch references, or rank candidates by frequency.
+
+Copy and edit the [authorized material example](examples/authorized-materials.example.json),
+then bind the exact selected bytes and references:
+
+```text
+openadam-dev materials schema --json
+openadam-dev materials inspect \
+  --root /absolute/path/to/analysis-root \
+  --manifest authorized-materials.json --json
+openadam-dev opportunity init \
+  --root /absolute/path/to/analysis-root \
+  --materials authorized-materials.json \
+  --output .verify/openadam-dev/opportunity.json --json
+openadam-dev opportunity schema --json
+openadam-dev opportunity check \
+  --root /absolute/path/to/analysis-root \
+  --materials authorized-materials.json \
+  --proposal .verify/openadam-dev/opportunity.json --json
+```
+
+The generated proposal is intentionally incomplete until the user's Agent
+replaces every `TODO`. A successful check establishes only current structure,
+material binding, authorized source references, counterevidence, alternatives,
+and preserved unknowns. It does not recommend a layer or approve development.
 
 The low-disclosure route starts from current Skill inventory and bounded task
 or conversation summaries, then reads only selected histories needed to test a
@@ -50,7 +77,9 @@ not used, the semantic effect of a result, or whether the Agent adopted it.
 Those questions need an explicit contemporaneous Agent assessment or a
 controlled baseline/treatment task with a task-native result check; otherwise
 the proposal leaves them unknown. Raw transcripts are not copied into the
-provider project.
+provider project. Reference-only sources are read through the user's supported
+Agent host or browser interface; the CLI records their identity but never
+fetches them.
 
 For a new Node MCP provider, inspect the current authoring interface and first
 preview the complete scaffold without writing it:
@@ -111,14 +140,15 @@ For a version-bound Agent environment, use a release catalog that contains the
 Developer Kit component:
 
 ```text
-agent-host setup --profile developer --host codex --host claude --release-manifest /absolute/current.json
+agent-host setup --profile developer --host codex --host zcode --release-manifest /absolute/current.json
 ```
 
-Codex receives one Skill-only plugin; Claude receives one immutable Skill link.
+Codex receives one Skill-only plugin; ZCode receives one immutable Skill link.
 Both launch the exact Suite Node and CLI bytes from the installed compatibility
-set. The Developer Kit adds no MCP server or callable tool to the ordinary Agent
-catalog. A mutable `--development-root` is intentionally rejected for this
-profile.
+set. Claude Code can receive the same optional compatibility projection when a
+user-owned supplier is configured. The Developer Kit adds no MCP server or
+callable tool to the ordinary Agent catalog. A mutable `--development-root` is
+intentionally rejected for this profile.
 
 The current release candidate is local and macOS-arm64 only. A public
 repository or registry location, signed or notarized distribution, Linux and
@@ -133,7 +163,7 @@ threshold it reports a baseline, never a general performance PASS.
 
 Maintainers can separately measure the packaged Developer Kit CLI itself with
 `npm run measure:self`. That baseline covers startup, bounded parallel starts,
-schema/doctor/scaffold/inspect flow cost, process RSS when the operating system
+schema/doctor/material/opportunity/scaffold/inspect flow cost, process RSS when the operating system
 reports it, and the exact Developer Skill plus MCP carrier bytes. It performs
 no model call and does not turn local timings into a release threshold.
 The packaged CLI keeps its small router separate and loads command code only

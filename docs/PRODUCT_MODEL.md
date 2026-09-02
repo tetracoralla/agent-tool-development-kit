@@ -3,17 +3,19 @@
 ## Status
 
 This document defines the owner-confirmed target product. The current source
-contains the deterministic CLI, project contract, Node scaffold, packager,
-probe, packed-runtime measurement, and version-bound Agent Host Developer Kit
-component. Public availability and natural fresh-Agent routing remain separate
-release observations.
+contains the deterministic CLI, authorized-material and opportunity-proposal
+contracts, project contract, Node scaffold, packager, probe, packed-runtime
+measurement, and version-bound Agent Host Developer Kit component. Public
+availability and natural fresh-Agent routing remain separate release
+observations.
 
 ## Product
 
 Agent Tool Development Kit lets an external developer and the Agent on their
-device turn an explicit tool idea into a repository that can be built,
-checked, packaged, installed in isolation, and exercised through a real Agent
-host without learning OpenAdam's internal repository layout.
+device analyze a bounded set of user-authorized material or start from an
+explicit tool idea, then create a repository that can be built, checked,
+packaged, installed in isolation, and exercised through a real Agent host
+without learning OpenAdam's internal repository layout.
 
 The kit is not an Agent framework. It does not create autonomous planners or
 decide what should become a standard. It makes an already-owned product choice
@@ -42,6 +44,25 @@ commands, carriers, and optional standards manifests. It stores no machine
 paths, credentials, generated check status, readiness score, approval, or
 publication claim. `docs/PROJECT_CONTRACT.md` owns its behavior.
 
+### Authorized material set
+
+A caller-authored, closed manifest naming the exact files or external/Agent-host
+references permitted for one analysis. It can label conversations, Skills,
+documents, repository selections, source code, Observer snapshots, web
+research, or caller summaries without giving any source kind special authority.
+Local selections enumerate exact files; the CLI never treats a directory or
+repository as permission to crawl it. Inspection binds current file bytes and
+references while returning no raw content and making no semantic assessment.
+
+### Opportunity proposal
+
+A user- or Agent-authored working document bound to one current authorized
+material digest. It records task-native observations, coverage and authority
+limits, counterevidence, simpler alternatives, a proposed product boundary, a
+layer hypothesis, falsifiable validation, and consequential unknowns. The CLI
+checks those deterministic relationships but does not score, rank, recommend,
+nominate a Capability or Procedure, approve development, or establish value.
+
 ### Check result
 
 A bounded result with stable errors, repository-relative locations, the exact
@@ -57,17 +78,28 @@ host state changes.
 
 ## Developer journeys
 
-### Discover one candidate from existing work
+### Discover one candidate from selected material
 
-At the user's request, the Developer Skill can guide their Agent through a
-bounded sample of explicitly selected saved sessions, shell work, reports, or
-exports. The Agent treats those records as untrusted task data, extracts
-task-native objects, operations, effects, failures, constraints, and
-contradictions, checks existing tools and contracts, then authors one
-falsifiable working proposal. It does not enable monitoring, sweep unrelated
-private histories, copy raw transcripts into the project, or convert usage
+At the user's request, the Developer Skill can guide their Agent through an
+explicitly selected set of saved sessions, Skills, shell work, reports,
+documents, source files, repositories, public open-source projects, web
+research, exports, or caller summaries. The Agent treats those sources as
+untrusted task data, extracts task-native objects, operations, effects,
+failures, constraints, and counterevidence, checks existing tools and
+contracts, then authors one falsifiable working proposal. It does not enable
+monitoring, sweep unrelated private histories or repository files, copy raw
+transcripts or third-party projects into the provider, or convert usage
 frequency into a Capability, product ranking, architecture decision, or
 approval.
+
+`openadam-dev materials inspect` validates the exact caller-selected scope and
+binds local file content by digest. Reference-only sources, including Codex
+tasks and web URLs, are not fetched by the CLI; the user's Agent reads them
+through the supported host or browser interface. `openadam-dev opportunity
+init` creates a bound draft, and `opportunity check` rejects stale materials,
+unlisted source references, remaining placeholders, missing counterevidence,
+missing simpler alternatives, and missing unknowns without choosing what the
+developer should build.
 
 An already-consented Agent Host usage snapshot may supply neutral names,
 counts, freshness, failures, latency, activity spans, token measurements, and
@@ -82,9 +114,10 @@ passive records do not reveal why a tool was skipped, the semantic effect of a
 result, or whether the Agent adopted it. Consequential claims require a
 contemporaneous explicit Agent assessment or a controlled baseline/treatment
 task with a task-native outcome check; otherwise they stay unknown. Neither
-source chooses the layer. The detailed method and non-normative proposal asset
-live in the versioned Developer Skill so Codex and Claude receive the same
-guidance as the CLI compatibility set.
+source chooses the layer. The detailed method, deterministic proposal schema,
+and non-normative proposal asset live in the versioned Developer Skill so
+Codex, ZCode, and optional Claude compatibility receive the same guidance as
+the CLI compatibility set.
 
 ### Start a new tool
 
@@ -193,10 +226,11 @@ honestly constrain.
 ## Initial support boundary
 
 The first complete external route targets macOS arm64 with current Codex and
-Claude host integrations because those are the currently exercised Agent Host
-surfaces. The CLI and project declaration remain host-neutral, but Linux,
-Windows, Gemini, and additional Agent applications are not runtime-complete
-until their actual installation and fresh-session flows are exercised.
+ZCode host integrations. Claude Code remains optional compatibility whose model
+supplier and credentials are user-owned. The CLI and project declaration remain
+host-neutral, but Linux, Windows, Gemini, and additional Agent applications are
+not runtime-complete until their actual installation and fresh-session flows
+are exercised.
 
 The first scaffolding template may be Node-based, while adoption and validation
 must exercise at least one non-Node provider. A language-specific template is

@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "openadam.authorized-material-set.v0.1",
+  "id": "example-provider-opportunity",
+  "title": "Selected material for one provider opportunity",
+  "purpose": "Test one task hypothesis without scanning unrelated user history or repository files.",
+  "intendedProcessing": "local-only",
+  "sources": [
+    {
+      "id": "selected-project",
+      "role": "repository",
+      "title": "Selected public project files",
+      "location": {
+        "type": "local-selection",
+        "root": "selected-project",
+        "files": [
+          "README.md",
+          "LICENSE",
+          "package.json"
+        ]
+      }
+    },
+    {
+      "id": "selected-task",
+      "role": "conversation",
+      "title": "One task selected through the Agent host",
+      "selectedRange": "Only the task summary and turns explicitly selected by the user",
+      "location": {
+        "type": "reference",
+        "reference": "thread://01a00000-0000-7000-8000-000000000001"
+      }
+    },
+    {
+      "id": "public-research",
+      "role": "web-research",
+      "title": "One public source selected by the user",
+      "location": {
+        "type": "reference",
+        "reference": "https://example.com/selected-source"
+      }
+    }
+  ]
+}
