@@ -13,7 +13,7 @@ substitution claim, or publication approval.
 | Procedure, Node | Procedure Contracts `run-conformance.mjs` with Dependency Preflight | three current result-conformance cases passed on 2026-09-01; local pilot only |
 | Host distribution | isolated Agent Host release build with `developer` profile | 13-component catalog validated; Developer Kit remained outside `agentComponents` |
 | Codex carrier | real Codex CLI with an empty temporary `CODEX_HOME` | Skill-only plugin, generated exact CLI launcher, no `.mcp.json`, doctor OK, owned uninstall |
-| ZCode carrier | Agent Host isolated carrier checks with an empty ZCode configuration root | immutable Skill projection and exact CLI launcher are the primary external-developer route; current `0.1.3` admission is rechecked in the Agent Host release lane before this row is treated as current installed evidence |
+| ZCode carrier | Agent Host isolated carrier checks with an empty ZCode configuration root | immutable Skill projection and exact CLI launcher are the primary external-developer route; current `0.1.4` admission is rechecked in the Agent Host release lane before this row is treated as current installed evidence |
 | Optional Claude-compatible carrier | real Claude CLI with an empty temporary `CLAUDE_CONFIG_DIR` | immutable Skill link, exact CLI version probe, doctor OK, owned MCP/Skill uninstall; no official Claude model dependency or natural-selection claim |
 | Developer Kit performance | packaged `0.1.3` component, `npm run measure:self -- --iterations 30 --concurrency 8` | 2026-09-02 local baseline: 15,813-byte lazy CLI; 47.930 ms cold; 47.745 ms warm p50 / 50.489 ms p95; 98.393 bounded eight-way starts/s; 39,436,288-byte one-process RSS; 7,599 default Skill bytes plus 13,599 on-demand discovery/worksheet bytes; zero MCP servers; material inspect 93.971 ms, opportunity init 105.157 ms, and opportunity check 106.529 ms; no threshold and no model call |
 | Authorized material and opportunity contract | closed schemas plus packaged `materials inspect` and `opportunity init/check` | exact selected local files or opaque references only; no directory crawl or reference fetch; bounded hashes bind current bytes; proposal check validates source bindings, counterevidence, simpler alternatives, and unknowns without recommending a layer or approving development |
@@ -35,7 +35,8 @@ binding, contradictions, alternatives, and preserved unknowns. Counts and task
 recurrence were not used as rankings.
 
 Still outside these observations: a public registry install, Developer ID
-signed/notarized distribution, Linux and Windows host flows, another physical
+signed/notarized distribution, a genuine Windows build and fresh host flow,
+Linux host flows, another physical
 device, exhaustive history mining, credentials, external privacy/legal
 authorization, and owner business/experience acceptance. ZCode fresh-model
 selection remains a separate deferred validation lane when the configured model

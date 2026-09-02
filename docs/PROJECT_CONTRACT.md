@@ -24,6 +24,12 @@ links, parent traversal, absolute paths, repeated files/references, changed
 bytes during inspection, and directory crawling fail closed. Inspection emits
 only relative paths, digests, byte counts, and source metadata.
 
+An `agent-trace` source names one already-exported, exact local Trace Analysis
+Pack. The material contract neither exports that pack nor authorizes selected
+conversation content. Metadata-only versus content-bearing export remains an
+upstream Agent Host privacy choice, and the downstream Agent must preserve the
+pack's coverage, truncation, provenance, and unknown semantics.
+
 `openadam.agent-tool-opportunity-proposal.v0.1` binds one proposal to the
 current material-set id and digest. It requires task observations with source
 references and limits, a seven-part observation-coverage map, counterevidence,

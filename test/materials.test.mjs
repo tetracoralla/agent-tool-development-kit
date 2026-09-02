@@ -27,20 +27,23 @@ test('binds exact local selections and references without returning raw content 
   const root = await fixture([
     { id: 'skill', role: 'skill', title: 'Selected Skill', location: { type: 'local-selection', root: 'skill', files: ['SKILL.md'] } },
     { id: 'task', role: 'conversation', title: 'Archived task', location: { type: 'reference', reference: 'thread://01a00000-0000-7000-8000-000000000001' } },
+    { id: 'trace', role: 'agent-trace', title: 'Selected metadata-only trace pack', location: { type: 'local-file', path: 'trace-analysis-pack.json' } },
   ])
   await mkdir(join(root, 'skill'))
   await writeFile(join(root, 'skill/SKILL.md'), '# Selected Skill\nUse one bounded tool.\n')
   await writeFile(join(root, 'skill/private-not-selected.txt'), 'must not be discovered\n')
+  await writeFile(join(root, 'trace-analysis-pack.json'), '{"schemaVersion":"openadam.agent-host-trace-analysis-pack.v0.1","privateFixture":"must-not-be-returned"}\n')
   const result = await inspectMaterials(root, 'authorized-materials.json')
   assert.equal(result.status, 'ok')
-  assert.equal(result.materialSet.sources, 2)
-  assert.equal(result.materialSet.selectedFiles, 1)
+  assert.equal(result.materialSet.sources, 3)
+  assert.equal(result.materialSet.selectedFiles, 2)
   assert.equal(result.sources[0].files[0].path, 'skill/SKILL.md')
   assert.match(result.materialSet.digest, /^sha256:[a-f0-9]{64}$/u)
   assert.equal(result.processing.rawContentReturned, false)
   assert.equal(result.processing.referencesFetched, false)
   assert.equal(result.processing.directoryCrawling, false)
   assert.equal(JSON.stringify(result).includes('must not be discovered'), false)
+  assert.equal(JSON.stringify(result).includes('must-not-be-returned'), false)
   assert.equal(JSON.stringify(result).includes(root), false)
 })
 

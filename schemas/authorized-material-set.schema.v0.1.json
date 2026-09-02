@@ -63,6 +63,7 @@
             "source-code",
             "documentation",
             "observer-snapshot",
+            "agent-trace",
             "web-research",
             "caller-summary",
             "other"

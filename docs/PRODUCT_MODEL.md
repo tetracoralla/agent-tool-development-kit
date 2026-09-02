@@ -48,7 +48,8 @@ publication claim. `docs/PROJECT_CONTRACT.md` owns its behavior.
 
 A caller-authored, closed manifest naming the exact files or external/Agent-host
 references permitted for one analysis. It can label conversations, Skills,
-documents, repository selections, source code, Observer snapshots, web
+documents, repository selections, source code, Observer snapshots, Agent Host
+Trace Analysis Packs, web
 research, or caller summaries without giving any source kind special authority.
 Local selections enumerate exact files; the CLI never treats a directory or
 repository as permission to crawl it. Inspection binds current file bytes and
@@ -107,6 +108,12 @@ context-cost leads. The Agent starts with current Skill inventory and bounded
 task/conversation summaries, then opens only the selected histories needed to
 test one hypothesis. Session content and any remote-model disclosure require
 their own explicit scope. Raw transcripts do not enter the provider repository.
+
+When deeper shell-specific facts are useful, the user may separately export
+one bounded Agent Host Trace Analysis Pack and list that exact file as
+`agent-trace`. Metadata-only is the default. Including selected conversation
+content requires explicit confirmation at export time and does not make model
+reasoning authoritative evidence of non-use, adoption, correctness, or value.
 
 The snapshot's observation-coverage map controls what may be claimed. A tool
 call can be observed, but an available Skill inventory is not Skill activation;

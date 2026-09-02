@@ -17,7 +17,7 @@ test('returns the closed project schema as bounded JSON', async () => {
 test('returns the packaged Developer Kit version without reading the repository', async () => {
   const { stdout } = await execFileAsync(process.execPath, [cli, '--version', '--json'])
   const result = JSON.parse(stdout)
-  assert.deepEqual(result, { schemaVersion: 'openadam.developer-kit-version.v0.1', status: 'ok', version: '0.1.3' })
+  assert.deepEqual(result, { schemaVersion: 'openadam.developer-kit-version.v0.1', status: 'ok', version: '0.1.4' })
 })
 
 test('returns the authorized-material and opportunity schemas without loading a project', async () => {

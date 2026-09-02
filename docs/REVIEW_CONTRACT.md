@@ -45,7 +45,10 @@ discovery pass from the current product model and visible commands.
   sources are not fetched; directories, private histories, sibling repositories,
   and generic Skill roots are not crawled. The result persists no raw content
   and preserves the difference between observed tool calls and unavailable
-  Skill activation, non-use reason, semantic effect, or result adoption. A
+  Skill activation, non-use reason, semantic effect, or result adoption. An
+  `agent-trace` input preserves its adapter identity, content policy,
+  truncation, provenance, and unknowns; a material manifest never substitutes
+  for upstream sensitive-content consent. A
   consequential adoption/effect claim requires a controlled task-native
   comparison or contemporaneous explicit Agent assessment.
 - Proposal init binds current material bytes but produces an explicitly

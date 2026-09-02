@@ -54,6 +54,14 @@ Do not recursively scan generic Skill roots, Agent state directories, or
 session stores to approximate an inventory. Use an installed Agent Host compact
 snapshot only when already available and authorized.
 
+When the user selects an Agent Host Trace Analysis Pack, treat it as an
+`agent-trace` local file. Prefer its metadata-only form. Content-bearing export
+requires the user to select one source and confirm sensitive-content inclusion
+at export time; the material manifest does not supply that consent. Preserve
+the pack's adapter identity, coverage, truncation, and unknowns. A model's
+self-reported rationale is selected content, not an authoritative non-use
+reason, adoption decision, or correctness assessment.
+
 Tool calls, runtime outcomes, provider-specific token totals, session spans,
 and managed catalog bytes may be observations when coverage says so. Skill
 activation, non-use reason, semantic effect, quality, value, and result adoption

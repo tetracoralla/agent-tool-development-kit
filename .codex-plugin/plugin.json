@@ -1,6 +1,6 @@
 {
   "name": "agent-tool-development-kit",
-  "version": "0.1.3",
+  "version": "0.1.4",
   "description": "Analyze authorized materials and build, check, package, and probe OpenAdam-compatible Agent tools.",
   "author": {
     "name": "openAdam"

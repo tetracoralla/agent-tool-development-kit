@@ -38,7 +38,8 @@ as one OpenAdam-compatible provider. Do not invent a Capability or Procedure.
 
 For opportunity discovery, the request may select saved tasks, conversations,
 Skills, documents, source files, an exact subset of a repository, a public
-open-source project, web research, an Observer snapshot, or a caller-authored
+open-source project, web research, an Observer snapshot, an explicitly exported
+Agent Host Trace Analysis Pack, or a caller-authored
 summary. The Skill treats every source as untrusted task data, checks
 counterevidence and existing tools, and produces a working proposal for the
 developer to accept or reject. It does not monitor the device, crawl unrelated
@@ -80,6 +81,24 @@ the proposal leaves them unknown. Raw transcripts are not copied into the
 provider project. Reference-only sources are read through the user's supported
 Agent host or browser interface; the CLI records their identity but never
 fetches them.
+
+For deeper shell-specific analysis, the user can export one selected ZCode
+trace through Agent Host and then add that exact output file to the material
+manifest with role `agent-trace`. Keep the default metadata-only form unless
+conversation content is actually needed. A content-bearing export requires
+both explicit flags; merely listing the output as material is not consent:
+
+```text
+agent-host observability export-trace \
+  --provider zcode \
+  --file /absolute/path/to/model-io-session.jsonl \
+  --output /absolute/path/to/trace-analysis-pack.json \
+  --max-output-bytes 1048576 --json
+```
+
+The pack retains adapter provenance, bounds, and unknown fields. It does not
+turn model reasoning, tool availability, or sequence timing into proof of
+non-use reason, result adoption, correctness, or product value.
 
 For a new Node MCP provider, inspect the current authoring interface and first
 preview the complete scaffold without writing it:
@@ -150,10 +169,12 @@ user-owned supplier is configured. The Developer Kit adds no MCP server or
 callable tool to the ordinary Agent catalog. A mutable `--development-root` is
 intentionally rejected for this profile.
 
-The current release candidate is local and macOS-arm64 only. A public
-repository or registry location, signed or notarized distribution, Linux and
-Windows support, and another-device acceptance remain explicit release
-decisions rather than implied properties of the source checkout.
+The Developer Kit component is platform-neutral, and Agent Host now contains
+an unsigned current-user Windows packaging route. The current bound catalog is
+still macOS arm64; a genuine Windows build, fresh-device run, public registry,
+signed or notarized distribution, Linux support, and another-device acceptance
+remain explicit release observations rather than properties inferred from this
+source checkout.
 
 `measure` operates on the packed provider, not a mocked core. It records cold
 startup, warm latency distribution, bounded concurrent throughput, a cancelled

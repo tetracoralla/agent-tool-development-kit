@@ -36,6 +36,17 @@ task, causation, opportunity, product value, or the right layer. Do not read the
 Observer database or provider event files as a shortcut around a missing
 product result or collection permission.
 
+Agent Host may also export one user-selected Trace Analysis Pack through its
+public observability command. Bind that exact pack as an `agent-trace` local
+file. Use metadata-only export by default and keep its adapter id/version,
+source format, truncation flags, and unknown fields attached to derived
+observations. A content-bearing pack requires a separate explicit source
+selection plus sensitive-content confirmation before export; listing it in the
+material manifest does not retroactively authorize disclosure. Do not convert
+model reasoning text, tool availability, or temporal adjacency into an
+authoritative explanation of why a tool was skipped or whether a result was
+accepted.
+
 First author an `openadam.authorized-material-set.v0.1` manifest under one
 explicit analysis root. Use `local-file` for one exact file,
 `local-selection` for an exact list of files beneath one directory or
