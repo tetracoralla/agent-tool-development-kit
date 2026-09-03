@@ -27,6 +27,13 @@ discovery pass from the current product model and visible commands.
 - Rebuild identical payload bytes twice and compare the complete archive digest;
   reject source-root aliases, file-URI leakage, links, special files, duplicate
   archive paths, incomplete identity, empty legal material, and malformed SBOM.
+- For Agent Host v0.3, reject missing or unknown discovery fields, invalid or
+  mismatched Skill roots, escaped/URI/oversized identity and launcher paths,
+  missing `SKILL.md`, invalid or repeated version argv, absent discovery runtime
+  bytes, and provider-owned launcher collisions. Keep v0.2 and the independent
+  v0.5 shape covered separately.
+- Change a valid integration during a project check and during the package
+  command; both sequences must fail closed before archive publication.
 - Verify reports contain repository-relative paths, stable errors, explicit
   skipped/unavailable lanes, and complete-envelope byte bounds.
 

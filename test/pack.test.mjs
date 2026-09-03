@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict'
 import { createReadStream } from 'node:fs'
-import { chmod, mkdir, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises'
+import { chmod, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createGunzip } from 'node:zlib'
@@ -112,6 +112,32 @@ console.log(process.env.OPENADAM_SECRET ?? 'isolated')
   return root
 }
 
+async function mathAnchorManifestFixture(t) {
+  const root = await fixture(t)
+  const fixturePluginRoot = join(root, 'payload/marketplace/plugins/fixture-tool')
+  const mathPluginRoot = join(root, 'payload/marketplace/plugins/math-anchor-obligation-runtime')
+  await rename(fixturePluginRoot, mathPluginRoot)
+  await rename(join(mathPluginRoot, 'skills/fixture-tool'), join(mathPluginRoot, 'skills/calculate'))
+  await mkdir(join(mathPluginRoot, 'runtime/math-anchor-runtime'), { recursive: true })
+  await rename(join(mathPluginRoot, 'runtime/server.mjs'), join(mathPluginRoot, 'runtime/math-anchor-runtime/math-anchor-runtime'))
+  await writeJson(join(root, 'payload/marketplace/.agents/plugins/marketplace.json'), {
+    name: 'openadam-math-anchor',
+    plugins: [{ name: 'math-anchor-obligation-runtime', source: { source: 'local', path: './plugins/math-anchor-obligation-runtime' } }],
+  })
+  await writeJson(join(mathPluginRoot, '.codex-plugin/plugin.json'), { name: 'math-anchor-obligation-runtime', version: '0.6.0' })
+  await writeFile(join(mathPluginRoot, 'skills/calculate/SKILL.md'), '---\nname: calculate\ndescription: Use Math Anchor.\n---\n')
+  const manifest = JSON.parse(await readFile(new URL('./fixtures/math-anchor-tool.integration.json', import.meta.url), 'utf8'))
+  await writeJson(join(root, 'packaging/integration.json'), manifest)
+  const projectPath = join(root, 'agent-tool.json')
+  const project = JSON.parse(await readFile(projectPath, 'utf8'))
+  project.id = 'math-anchor'
+  project.version = '0.6.0'
+  project.name = 'Math Anchor'
+  project.package.componentId = 'math-anchor-obligation-runtime'
+  await writeJson(projectPath, project)
+  return root
+}
+
 async function pythonCapabilityFixture(t) {
   const root = await fixture(t)
   const pluginRoot = join(root, 'payload/marketplace/plugins/fixture-tool')
@@ -214,6 +240,17 @@ test('packages v0.5 optional path environment declarations without granting mach
   assert.equal(JSON.stringify(descriptor).includes(root), false)
 })
 
+test('packages the real Math Anchor v0.3 skill-cli manifest without provider-owned launcher bytes', async (t) => {
+  const root = await mathAnchorManifestFixture(t)
+  const result = await packProject(root)
+  assert.equal(result.status, 'ok')
+  const descriptor = await descriptorFromArchive(join(root, result.artifact.path))
+  assert.equal(descriptor.integration.schemaVersion, 'openadam.agent-host-tool-integration.v0.3')
+  assert.equal(descriptor.integration.discovery.skill.id, 'calculate')
+  assert.equal(descriptor.integration.discovery.skill.launcher, 'scripts/math-anchor')
+  assert.equal(descriptor.files.some((item) => item.path.endsWith('/skills/calculate/scripts/math-anchor')), false)
+})
+
 test('rejects a v0.5 optional path environment that overlaps the workspace grant', async (t) => {
   const root = await fixture(t, { optionalPathEnvironment: ['PLUGIN_CACHE_ROOTS'] })
   const integrationPath = join(root, 'packaging/integration.json')
@@ -240,6 +277,22 @@ test('rejects source-machine path leakage from staged bytes', async (t) => {
   const result = await safePackProject(root)
   assert.equal(result.status, 'error')
   assert.equal(result.error.code, 'PACKAGE_SOURCE_PATH_LEAK')
+})
+
+test('rejects integration drift caused by the package command before archiving', async (t) => {
+  const root = await fixture(t)
+  await writeFile(join(root, 'build.mjs'), `
+import { cp, readFile, writeFile } from 'node:fs/promises'
+const path = 'packaging/integration.json'
+const integration = JSON.parse(await readFile(path, 'utf8'))
+integration.summary = 'Changed by package command.'
+await writeFile(path, JSON.stringify(integration) + '\\n')
+await cp('payload', process.env.OPENADAM_COMPONENT_STAGE, { recursive: true })
+`)
+  const result = await safePackProject(root)
+  assert.equal(result.status, 'error')
+  assert.equal(result.error.code, 'TOOL_INTEGRATION_DRIFT')
+  assert.equal(result.mutation, 'not-performed')
 })
 
 test('rejects links in the staged component inventory', async (t) => {

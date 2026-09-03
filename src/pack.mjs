@@ -25,15 +25,14 @@ import {
   MAX_COMPONENT_ARCHIVE_BYTES,
   MAX_COMPONENT_EXPANDED_BYTES,
   MAX_COMPONENT_FILES,
-  MAX_COMPONENT_PATH_BYTES,
   PROJECT_FILE,
-  TOOL_INTEGRATION_SCHEMA_VERSIONS,
 } from './constants.mjs'
 import { loadProject } from './contracts.mjs'
 import { DeveloperKitError, publicError } from './errors.mjs'
 import { readBoundedJson } from './json.mjs'
 import { requireDirectory, requireRelativePath } from './paths.mjs'
 import { runProjectCommand } from './runner.mjs'
+import { componentPath, loadToolIntegration, validateToolIntegration } from './tool-integration.mjs'
 
 const FIXED_TIME = new Date('2000-01-01T00:00:00.000Z')
 
@@ -84,97 +83,6 @@ async function ensureOutputParent(root, output) {
   }
   const parentReal = await realpath(dirname(output.target))
   if (!inside(root, parentReal)) throw new DeveloperKitError('PATH_ESCAPE', 'The package artifact parent escapes the repository.')
-}
-
-function exactKeys(value, allowed, label) {
-  if (value === null || typeof value !== 'object' || Array.isArray(value)) {
-    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', `${label} must be an object.`)
-  }
-  const unexpected = Object.keys(value).filter((key) => !allowed.includes(key))
-  if (unexpected.length > 0) {
-    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', `${label} contains unsupported fields.`, { fields: unexpected.slice(0, 32) })
-  }
-}
-
-function boundedString(value, label, maximum = 1024) {
-  if (typeof value !== 'string' || value.length === 0 || value.length > maximum || /[\u0000\r\n]/u.test(value)) {
-    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', `${label} is invalid.`)
-  }
-  return value
-}
-
-function componentPath(value, label) {
-  boundedString(value, label, MAX_COMPONENT_PATH_BYTES)
-  if (value.includes('\\') || value.startsWith('/') || /^[A-Za-z]:/u.test(value) || /[\u0000-\u001f\u007f]/u.test(value)) {
-    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', `${label} must be a contained POSIX relative path.`)
-  }
-  const normalized = posix.normalize(value)
-  if (normalized !== value || normalized === '.' || normalized === '..' || normalized.startsWith('../')) {
-    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', `${label} must be a canonical contained relative path.`)
-  }
-  return value
-}
-
-function stringArray(value, label, minimum = 0) {
-  if (!Array.isArray(value) || value.length < minimum || value.length > 128
-    || value.some((item) => typeof item !== 'string' || item.length === 0)
-    || new Set(value).size !== value.length) {
-    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', `${label} is invalid.`)
-  }
-  return value
-}
-
-function validateIntegration(value, componentId) {
-  exactKeys(value, ['schemaVersion', 'displayName', 'summary', 'codex', 'runtime', 'ownership'], 'tool integration')
-  if (!TOOL_INTEGRATION_SCHEMA_VERSIONS.includes(value.schemaVersion)) {
-    throw new DeveloperKitError('TOOL_INTEGRATION_UNSUPPORTED', `Only ${TOOL_INTEGRATION_SCHEMA_VERSIONS.join(' or ')} is supported by this Developer Kit version.`)
-  }
-  boundedString(value.displayName, 'tool display name', 80)
-  boundedString(value.summary, 'tool summary', 180)
-
-  exactKeys(value.codex, ['marketplaceRoot', 'marketplace', 'pluginRoot', 'plugin', 'identityFiles'], 'Codex integration')
-  componentPath(value.codex.marketplaceRoot, 'Codex marketplace root')
-  componentPath(value.codex.pluginRoot, 'Codex plugin root')
-  if (!/^[a-z][a-z0-9-]*$/u.test(value.codex.marketplace ?? '') || !/^[a-z][a-z0-9-]*$/u.test(value.codex.plugin ?? '')) {
-    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', 'Codex marketplace and plugin ids must use lower-case hyphen-case.')
-  }
-  if (value.codex.plugin !== componentId) {
-    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', 'The Codex plugin id must equal package.componentId.')
-  }
-  for (const path of stringArray(value.codex.identityFiles, 'Codex identity files', 2)) componentPath(path, 'Codex identity file')
-
-  const runtimeKeys = ['transport', 'executor', 'command', 'args', 'cwd', 'workspaceEnvironment', 'expectedTools', 'timeoutMs']
-  if (value.schemaVersion === 'openadam.agent-host-tool-integration.v0.5') runtimeKeys.push('optionalPathEnvironment')
-  exactKeys(value.runtime, runtimeKeys, 'runtime integration')
-  if (value.runtime.transport !== 'mcp-stdio' || !['component', 'suite-node'].includes(value.runtime.executor)) {
-    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', 'The runtime must use MCP stdio and a component or suite-node executor.')
-  }
-  componentPath(value.runtime.command, 'runtime command')
-  componentPath(value.runtime.cwd, 'runtime working directory')
-  stringArray(value.runtime.args, 'runtime arguments')
-  const workspaceEnvironment = stringArray(value.runtime.workspaceEnvironment, 'workspace environment')
-  if (workspaceEnvironment.some((name) => !/^[A-Z][A-Z0-9_]*$/u.test(name))) {
-    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', 'Workspace environment names must use upper-case identifier syntax.')
-  }
-  const optionalPathEnvironment = value.schemaVersion === 'openadam.agent-host-tool-integration.v0.5'
-    ? stringArray(value.runtime.optionalPathEnvironment ?? [], 'optional path environment')
-    : []
-  if (optionalPathEnvironment.some((name) => !/^[A-Z][A-Z0-9_]*$/u.test(name))) {
-    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', 'Optional path environment names must use upper-case identifier syntax.')
-  }
-  if (optionalPathEnvironment.some((name) => workspaceEnvironment.includes(name))) {
-    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', 'Workspace and optional path environment names must be distinct.')
-  }
-  stringArray(value.runtime.expectedTools, 'expected tools', 1)
-  if (!Number.isSafeInteger(value.runtime.timeoutMs) || value.runtime.timeoutMs < 1000 || value.runtime.timeoutMs > 30000) {
-    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', 'The runtime timeout must be an integer from 1000 to 30000 milliseconds.')
-  }
-
-  exactKeys(value.ownership, ['uninstall'], 'integration ownership')
-  if (value.ownership.uninstall !== 'agent-host-created-only') {
-    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', 'The only supported uninstall ownership is agent-host-created-only.')
-  }
-  return value
 }
 
 async function digestFile(path, leakagePatterns = [], componentRelativePath = undefined) {
@@ -251,6 +159,7 @@ function requireInventoryPath(paths, value, label) {
 
 async function validatePayload(root, project, integration, files) {
   const paths = new Set(files.map((item) => item.path))
+  validateToolIntegration(integration, { componentId: project.package.componentId, componentFiles: paths })
   const marketplaceFile = requireInventoryPath(paths, `${integration.codex.marketplaceRoot}/.agents/plugins/marketplace.json`, 'Codex marketplace manifest')
   const pluginIdentity = integration.codex.identityFiles.map((path) => requireInventoryPath(paths, `${integration.codex.pluginRoot}/${path}`, 'Codex plugin identity file'))
   const command = requireInventoryPath(paths, integration.runtime.command, 'runtime command')
@@ -387,6 +296,7 @@ export async function packProject(rootInput, {
   const root = await requireDirectory(rootInput)
   const loaded = await loadProject(root, declaredPath)
   if (loaded.project.package === undefined) throw new DeveloperKitError('PACKAGE_NOT_DECLARED', 'The project does not declare a package operation.')
+  const integration = await loadToolIntegration(root, loaded.project.package)
   const output = await outputTarget(root, loaded.project.package.artifact)
   const initialOutput = await outputSnapshot(output.target)
   if (initialOutput !== null && !replace) throw new DeveloperKitError('PACKAGE_ARTIFACT_EXISTS', 'The package artifact already exists; pass --replace to replace the exact observed file.')
@@ -407,8 +317,8 @@ export async function packProject(rootInput, {
       mutation: 'not-performed',
     })
   }
+  await loadToolIntegration(root, loaded.project.package, { expected: integration })
 
-  const integration = validateIntegration(await readBoundedJson(join(root, ...loaded.project.package.integration.replaceAll('\\', '/').split('/')), 'Agent Host integration'), loaded.project.package.componentId)
   const temporaryRoot = await mkdtemp(join(observationRoot, '.pack-stage-'))
   const componentRoot = join(temporaryRoot, 'component')
   const stagedArchive = join(temporaryRoot, 'component.tar.gz')
@@ -436,6 +346,8 @@ export async function packProject(rootInput, {
         mutation: 'not-performed',
       })
     }
+
+    await loadToolIntegration(root, loaded.project.package, { expected: integration })
 
     const files = await inventoryComponent(componentRoot, [root, inputRoot], temporaryRoot)
     const payload = await validatePayload(componentRoot, loaded.project, integration, files)

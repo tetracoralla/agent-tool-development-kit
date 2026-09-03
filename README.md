@@ -144,6 +144,12 @@ openadam-dev probe --root /path/to/tool --json
 openadam-dev measure --root /path/to/tool --iterations 20 --concurrency 4 --json
 ```
 
+`check` and `pack` accept the independent Agent Host v0.2, v0.3 `skill-cli`,
+and v0.5 integration shapes. v0.3 binds one product Skill plus contained direct
+CLI and rejects provider-owned bytes at its Host-generated launcher path; v0.5
+remains the separate optional-path-grant shape and cannot also declare
+discovery.
+
 `pack` never installs or publishes. `probe` requires the current Agent Host,
 uses its state-free standalone admission route, then calls only repository-
 declared, closed, read-only valid and invalid probes from a temporary workspace.

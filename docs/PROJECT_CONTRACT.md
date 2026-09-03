@@ -53,9 +53,11 @@ The first version records only facts with current consumers:
 - a distinct `capability-conformance` or `procedure-conformance` command lane
   whenever the corresponding manifest is declared;
 - one explicit package command, component id, repository-relative artifact and
-  Agent Host v0.2 integration, or v0.5 when a current Provider requires
-  separately authorized optional host path roots, when the project supports
-  packaging;
+  one closed Agent Host integration when the project supports packaging:
+  v0.2 for the MCP execution shape, v0.3 for that shape plus one product
+  `skill-cli` discovery route, or v0.5 for separately authorized optional Host
+  path roots. These versions are independent shapes; v0.5 does not also accept
+  v0.3 discovery;
 - direct package probes set `OPENADAM_PROBE_MODE=1` in their credential-free
   temporary process. A Provider may use that signal to remove an otherwise
   open-world route from the current probe behavior and catalog annotation, but
@@ -69,6 +71,21 @@ Unknown fields fail validation. Paths may not be absolute, parent-relative,
 URIs, links, or special files. Command arguments are passed directly to the
 executable; no shell expansion is performed. Environment values and credentials
 are never stored in the declaration.
+
+For a v0.3 integration, `check` and `pack` require a closed `discovery` object
+before any project command runs. Its kind is exactly `skill-cli`; the Skill id
+uses lower-case hyphen-case; the Skill root is exactly the declared Codex
+plugin's `skills/<id>` directory; its bounded, canonical identity paths include
+`SKILL.md`; and its launcher is a canonical path relative to that Skill. The
+discovery runtime declares only a component or Suite Node executor, one
+contained command, bounded argument arrays, and at least one unique version
+argument. During packaging, the Kit additionally binds the command and Skill
+identity files to the staged inventory and rejects provider bytes at or below
+the Host-owned launcher path. Agent Host, rather than the Provider source or
+archive, generates the launcher that forwards to the immutable runtime.
+The Kit reacquires the parsed declaration after project checks and after the
+package command; a semantic change during either interval fails as
+`TOOL_INTEGRATION_DRIFT` instead of sealing stale integration facts.
 
 The package command receives exactly one generated
 `OPENADAM_COMPONENT_STAGE` path and writes only the payload there. It does not

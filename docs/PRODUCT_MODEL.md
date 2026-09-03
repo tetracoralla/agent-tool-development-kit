@@ -156,18 +156,23 @@ it does not infer the product architecture from filenames or prose.
 
 ### Validate work
 
-`openadam-dev check` validates the project declaration, current file and command
-bindings, repository invariants, product Skill and plugin packaging, and any
-declared Capability or Procedure contracts. It invokes project checks without a
-shell, under one bounded run, and separates skipped or unavailable lanes from
+`openadam-dev check` validates the project declaration, the closed Agent Host
+integration shape, current file and command bindings, repository invariants,
+product Skill and plugin packaging, and any declared Capability or Procedure
+contracts. A malformed v0.2, v0.3, or v0.5 integration is rejected before any
+project check command runs. It invokes valid project checks without a shell,
+under one bounded run, and separates skipped or unavailable lanes from
 failures.
 
 ### Package and probe
 
-`openadam-dev pack` reruns current checks, gives the declared package command a
-private empty staging directory, validates the complete inventory, rejects
-unsafe paths or source-machine leakage, then publishes one reproducible local
-archive. Existing artifacts require explicit exact replacement.
+`openadam-dev pack` independently reacquires the integration, reruns current
+checks, gives the declared package command a private empty staging directory,
+validates the complete inventory, rejects unsafe paths or source-machine
+leakage, then publishes one reproducible local archive. For v0.3 it also binds
+the product Skill identity and direct discovery command to staged bytes while
+reserving the declared launcher path for Agent Host. Existing artifacts require
+explicit exact replacement.
 
 `openadam-dev probe` asks current Agent Host to perform state-free standalone
 component admission, then extracts the same archive into a temporary directory

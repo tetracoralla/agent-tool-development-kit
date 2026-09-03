@@ -22,5 +22,6 @@ export const MAX_COMPONENT_PATH_BYTES = 1024
 export const COMPONENT_SCHEMA_VERSION = 'openadam.agent-host-component.v0.1'
 export const TOOL_INTEGRATION_SCHEMA_VERSIONS = Object.freeze([
   'openadam.agent-host-tool-integration.v0.2',
+  'openadam.agent-host-tool-integration.v0.3',
   'openadam.agent-host-tool-integration.v0.5',
 ])

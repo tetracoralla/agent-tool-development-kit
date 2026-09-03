@@ -5,6 +5,7 @@ import { DEFAULT_CHECK_DEADLINE_MS, PROJECT_FILE } from './constants.mjs'
 import { DeveloperKitError, publicError } from './errors.mjs'
 import { requireDirectory } from './paths.mjs'
 import { runProjectCommand } from './runner.mjs'
+import { loadToolIntegration } from './tool-integration.mjs'
 
 function timestamp() {
   return new Date().toISOString().replaceAll(':', '').replaceAll('.', '-')
@@ -29,6 +30,26 @@ export async function checkProject(rootInput, {
   const runId = timestamp()
   const outputRoot = join(root, '.verify', 'openadam-dev', runId)
   await mkdir(outputRoot, { recursive: true })
+
+  let initialIntegration
+  if (loaded.project.package !== undefined) {
+    try {
+      initialIntegration = await loadToolIntegration(root, loaded.project.package)
+    } catch (error) {
+      if (!(error instanceof DeveloperKitError)) throw error
+      const result = {
+        schemaVersion: 'openadam.developer-kit-check.v0.1',
+        status: 'error',
+        project: { id: loaded.project.id, version: loaded.project.version },
+        checks: [],
+        error: publicError(error),
+        observationDirectory: relative(root, outputRoot),
+        environment: { credentialsInherited: false, networkIsolation: 'not-enforced' },
+      }
+      await writeFile(join(outputRoot, 'result.json'), `${JSON.stringify(result, null, 2)}\n`)
+      return result
+    }
+  }
 
   const scaffoldMarker = await exists(join(root, '.openadam-scaffold'))
   if (scaffoldMarker !== null) {
@@ -76,11 +97,22 @@ export async function checkProject(rootInput, {
     signal?.removeEventListener('abort', forwardAbort)
   }
 
+  let integrationError = null
+  if (initialIntegration !== undefined) {
+    try {
+      await loadToolIntegration(root, loaded.project.package, { expected: initialIntegration })
+    } catch (error) {
+      if (!(error instanceof DeveloperKitError)) throw error
+      integrationError = publicError(error)
+    }
+  }
+
   const result = {
     schemaVersion: 'openadam.developer-kit-check.v0.1',
-    status: checks.length === loaded.project.checks.length && checks.every((check) => check.status === 'ok') ? 'ok' : 'error',
+    status: integrationError === null && checks.length === loaded.project.checks.length && checks.every((check) => check.status === 'ok') ? 'ok' : 'error',
     project: { id: loaded.project.id, version: loaded.project.version },
     checks,
+    ...(integrationError === null ? {} : { error: integrationError }),
     observationDirectory: relative(root, outputRoot),
     environment: { credentialsInherited: false, networkIsolation: 'not-enforced' },
   }
