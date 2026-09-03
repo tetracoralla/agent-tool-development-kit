@@ -178,7 +178,13 @@ export async function openMcpProbeSession({
   signal,
   connectTimeoutCode = 'PROBE_RUNTIME_CONNECT_TIMEOUT',
   connectFailureCode = 'PROBE_RUNTIME_CONNECT_FAILED',
+  connectCancellationCode = 'PROBE_CANCELLED',
 }) {
+  const cancellationError = () => new DeveloperKitError(
+    connectCancellationCode,
+    'The packed runtime connection was cancelled by its caller.',
+  )
+  if (signal?.aborted) throw cancellationError()
   const integration = descriptor.integration
   const runtimeCommand = contained(extractedRoot, integration.runtime.command, 'runtime command')
   const runtimeCwd = contained(extractedRoot, integration.runtime.cwd, 'runtime working directory')
@@ -190,6 +196,7 @@ export async function openMcpProbeSession({
   environment.OPENADAM_PROBE_MODE = '1'
   for (const name of integration.runtime.workspaceEnvironment ?? []) environment[name] = workspaceRoot
   await mkdir(environment.TMPDIR, { recursive: true })
+  if (signal?.aborted) throw cancellationError()
 
   const transport = new StdioClientTransport({
     command: integration.runtime.executor === 'suite-node' ? process.execPath : runtimeCommand,
@@ -214,15 +221,23 @@ export async function openMcpProbeSession({
   // JSON-RPC error carrying that number. Only this private sentinel establishes
   // that the Developer Kit's declared initialization deadline actually fired.
   const localConnectTimeout = Object.freeze({ kind: 'openadam-local-connect-timeout' })
+  const localConnectCancellation = Object.freeze({ kind: 'openadam-local-connect-cancellation' })
   let connectTimer
   const connectDeadline = new Promise((_, reject) => {
     connectTimer = setTimeout(() => reject(localConnectTimeout), integration.runtime.timeoutMs)
     connectTimer.unref?.()
   })
+  let cancelConnect
+  const connectCancellation = new Promise((_, reject) => {
+    cancelConnect = () => reject(localConnectCancellation)
+  })
+  signal?.addEventListener('abort', cancelConnect, { once: true })
+  if (signal?.aborted) cancelConnect()
   try {
     await Promise.race([
-      client.connect(transport, { signal }),
+      client.connect(transport),
       connectDeadline,
+      connectCancellation,
     ])
   } catch (error) {
     await client.close().catch(() => {})
@@ -234,6 +249,7 @@ export async function openMcpProbeSession({
         { timeoutMs: integration.runtime.timeoutMs },
       )
     }
+    if (error === localConnectCancellation) throw cancellationError()
     throw new DeveloperKitError(
       connectFailureCode,
       'The packed runtime failed or rejected MCP initialization.',
@@ -241,6 +257,7 @@ export async function openMcpProbeSession({
     )
   } finally {
     clearTimeout(connectTimer)
+    signal?.removeEventListener('abort', cancelConnect)
   }
   try {
     const listing = await client.listTools(undefined, { timeout: integration.runtime.timeoutMs, maxTotalTimeout: integration.runtime.timeoutMs, signal })

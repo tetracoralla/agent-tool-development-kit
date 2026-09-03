@@ -6,12 +6,12 @@ import { tmpdir } from 'node:os'
 import { createGunzip } from 'node:zlib'
 import test from 'node:test'
 import { setTimeout as delay } from 'node:timers/promises'
-import { execFile } from 'node:child_process'
+import { execFile, spawn } from 'node:child_process'
 import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import tarStream from 'tar-stream'
 import { packProject, safePackProject } from '../src/pack.mjs'
-import { probeProject, safeProbeProject } from '../src/probe.mjs'
+import { openMcpProbeSession, probeProject, safeProbeProject } from '../src/probe.mjs'
 import { measureProject, safeMeasureProject } from '../src/measure.mjs'
 import { DeveloperKitError } from '../src/errors.mjs'
 
@@ -50,20 +50,36 @@ async function writeFixtureRuntime(root, options) {
   await writeFile(join(root, 'payload/marketplace/plugins/fixture-tool/runtime/server.mjs'), fixtureRuntime(options))
 }
 
-async function waitForRecordedRuntime(before) {
+async function waitForRecordedRuntime(before, { prefix = 'oadm-', home = 'cold-home' } = {}) {
   const deadline = Date.now() + 2000
   while (Date.now() < deadline) {
     for (const name of await readdir(tmpdir())) {
-      if (!name.startsWith('oadm-') || before.has(name)) continue
+      if (!name.startsWith(prefix) || before.has(name)) continue
       const root = join(tmpdir(), name)
       try {
-        const pid = Number(await readFile(join(root, 'cold-home', 'provider.pid'), 'utf8'))
+        const pid = Number(await readFile(join(root, home, 'provider.pid'), 'utf8'))
         if (Number.isSafeInteger(pid) && pid > 0) return { root, pid }
       } catch {}
     }
     await delay(20)
   }
   throw new Error('The timeout fixture did not record its runtime process.')
+}
+
+function collectChild(child) {
+  const stdout = []
+  const stderr = []
+  child.stdout.on('data', (chunk) => stdout.push(chunk))
+  child.stderr.on('data', (chunk) => stderr.push(chunk))
+  return new Promise((resolve, reject) => {
+    child.once('error', reject)
+    child.once('close', (code, signal) => resolve({
+      code,
+      signal,
+      stdout: Buffer.concat(stdout).toString('utf8'),
+      stderr: Buffer.concat(stderr).toString('utf8'),
+    }))
+  })
 }
 
 async function waitForProcessExit(pid) {
@@ -528,6 +544,112 @@ test('keeps a Provider-originated -32001 initialize rejection distinct from a lo
   assert.deepEqual(remainingCliTemporaryEntries, [])
 
   for (const name of (await readdir(observationParent)).filter((item) => item.endsWith('-measure'))) {
+    assert.equal((await readdir(join(observationParent, name))).includes('result.json'), true)
+  }
+
+  await writeFixtureRuntime(root, { initialize: 'respond' })
+  await packProject(root, { replace: true })
+  const recovered = await measureProject(root, { iterations: 5, concurrency: 2 })
+  assert.equal(recovered.status, 'ok')
+  assert.equal(recovered.measurement.warm.samples, 5)
+})
+
+test('keeps caller cancellation distinct, avoids pre-cancel spawn, cleans in-flight API and CLI work, and recovers', async (t) => {
+  const root = await fixture(t, { runtimeInitialize: 'silent', runtimeTimeoutMs: 5000, recordRuntimePid: true })
+  await packProject(root)
+  const integration = JSON.parse(await readFile(join(root, 'packaging/integration.json'), 'utf8'))
+  const preCancelled = new AbortController()
+  preCancelled.abort()
+  const directHome = join(root, 'direct-pre-cancel-home')
+  await assert.rejects(openMcpProbeSession({
+    extractedRoot: join(root, 'payload'),
+    descriptor: { integration },
+    workspaceRoot: join(root, 'direct-workspace'),
+    home: directHome,
+    signal: preCancelled.signal,
+  }), (error) => {
+    assert.equal(error instanceof DeveloperKitError, true)
+    assert.equal(error.code, 'PROBE_CANCELLED')
+    return true
+  })
+  await assert.rejects(access(join(directHome, 'provider.pid')), (error) => error?.code === 'ENOENT')
+
+  const observationParent = join(root, '.verify', 'openadam-dev')
+  const beforePreCancelTemporaryEntries = new Set(await readdir(tmpdir()))
+  await assert.rejects(measureProject(root, { iterations: 5, concurrency: 2, signal: preCancelled.signal }), (error) => {
+    assert.equal(error instanceof DeveloperKitError, true)
+    assert.equal(error.code, 'MEASURE_CANCELLED')
+    assert.equal(typeof error.details.observationDirectory, 'string')
+    assert.equal(error.details.protocolCode, undefined)
+    return true
+  })
+  assert.deepEqual((await readdir(tmpdir())).filter(
+    (name) => name.startsWith('oadm-') && !beforePreCancelTemporaryEntries.has(name),
+  ), [])
+
+  const apiController = new AbortController()
+  const beforeApiTemporaryEntries = new Set(await readdir(tmpdir()))
+  const apiPending = measureProject(root, { iterations: 5, concurrency: 2, signal: apiController.signal }).then(
+    (value) => ({ status: 'ok', value }),
+    (error) => ({ status: 'error', error }),
+  )
+  const apiRuntime = await waitForRecordedRuntime(beforeApiTemporaryEntries)
+  apiController.abort()
+  const apiOutcome = await apiPending
+  assert.equal(apiOutcome.status, 'error')
+  assert.equal(apiOutcome.error instanceof DeveloperKitError, true)
+  assert.equal(apiOutcome.error.code, 'MEASURE_CANCELLED')
+  assert.equal(apiOutcome.error.message, 'The packed runtime connection was cancelled by its caller.')
+  assert.equal(apiOutcome.error.details.protocolCode, undefined)
+  const apiPersisted = JSON.parse(await readFile(join(root, apiOutcome.error.details.observationDirectory, 'result.json'), 'utf8'))
+  assert.equal(apiPersisted.error.code, 'MEASURE_CANCELLED')
+  assert.equal(apiPersisted.error.details, undefined)
+  await assert.rejects(access(apiRuntime.root), (error) => error?.code === 'ENOENT')
+  await waitForProcessExit(apiRuntime.pid)
+
+  const beforeCliTemporaryEntries = new Set(await readdir(tmpdir()))
+  const cliChild = spawn(process.execPath, [cli, 'measure', '--root', root, '--iterations', '5', '--concurrency', '2', '--json'], {
+    stdio: ['ignore', 'pipe', 'pipe'],
+  })
+  const cliPending = collectChild(cliChild)
+  const cliRuntime = await waitForRecordedRuntime(beforeCliTemporaryEntries)
+  assert.equal(cliChild.kill('SIGTERM'), true)
+  const cliOutcome = await cliPending
+  assert.equal(cliOutcome.code, 1)
+  assert.equal(cliOutcome.signal, null)
+  assert.equal(cliOutcome.stderr, '')
+  assert.equal(Buffer.byteLength(cliOutcome.stdout) < 64 * 1024, true)
+  const cliResult = JSON.parse(cliOutcome.stdout)
+  assert.equal(cliResult.error.code, 'MEASURE_CANCELLED')
+  assert.equal(cliResult.error.message, 'The packed runtime connection was cancelled by its caller.')
+  assert.equal(cliResult.error.details.protocolCode, undefined)
+  assert.equal(/\n\s+at\s/u.test(cliOutcome.stdout), false)
+  const cliPersisted = JSON.parse(await readFile(join(root, cliResult.observationDirectory, 'result.json'), 'utf8'))
+  assert.equal(cliPersisted.error.code, 'MEASURE_CANCELLED')
+  assert.equal(cliPersisted.error.details, undefined)
+  await assert.rejects(access(cliRuntime.root), (error) => error?.code === 'ENOENT')
+  await waitForProcessExit(cliRuntime.pid)
+
+  const probeController = new AbortController()
+  const beforeProbeTemporaryEntries = new Set(await readdir(tmpdir()))
+  const probePending = probeProject(root, { signal: probeController.signal }, { hostPreview: async () => hostPreviewFixture() }).then(
+    (value) => ({ status: 'ok', value }),
+    (error) => ({ status: 'error', error }),
+  )
+  const probeRuntime = await waitForRecordedRuntime(beforeProbeTemporaryEntries, { prefix: 'oadp-', home: 'home' })
+  probeController.abort()
+  const probeOutcome = await probePending
+  assert.equal(probeOutcome.status, 'error')
+  assert.equal(probeOutcome.error instanceof DeveloperKitError, true)
+  assert.equal(probeOutcome.error.code, 'PROBE_CANCELLED')
+  assert.equal(probeOutcome.error.details.protocolCode, undefined)
+  const probePersisted = JSON.parse(await readFile(join(root, probeOutcome.error.details.observationDirectory, 'result.json'), 'utf8'))
+  assert.equal(probePersisted.error.code, 'PROBE_CANCELLED')
+  assert.equal(probePersisted.error.details, undefined)
+  await assert.rejects(access(probeRuntime.root), (error) => error?.code === 'ENOENT')
+  await waitForProcessExit(probeRuntime.pid)
+
+  for (const name of (await readdir(observationParent)).filter((item) => item.endsWith('-measure') || item.endsWith('-probe'))) {
     assert.equal((await readdir(join(observationParent, name))).includes('result.json'), true)
   }
 

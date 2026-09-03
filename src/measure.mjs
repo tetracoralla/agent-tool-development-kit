@@ -145,6 +145,7 @@ export async function measureProject(rootInput, {
       signal,
       connectTimeoutCode: 'MEASURE_RUNTIME_CONNECT_TIMEOUT',
       connectFailureCode: 'MEASURE_RUNTIME_CONNECT_FAILED',
+      connectCancellationCode: 'MEASURE_CANCELLED',
     })
     let coldCall
     let coldRss
@@ -168,6 +169,7 @@ export async function measureProject(rootInput, {
       signal,
       connectTimeoutCode: 'MEASURE_RUNTIME_CONNECT_TIMEOUT',
       connectFailureCode: 'MEASURE_RUNTIME_CONNECT_FAILED',
+      connectCancellationCode: 'MEASURE_CANCELLED',
     })
     let measurement
     try {
