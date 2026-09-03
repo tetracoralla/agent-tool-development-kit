@@ -9,7 +9,13 @@ import { loadProject } from './contracts.mjs'
 import { DeveloperKitError, publicError } from './errors.mjs'
 import { readBoundedJson } from './json.mjs'
 import { requireDirectory, resolveDeclaredFile } from './paths.mjs'
-import { extractArchive, openMcpProbeSession, requireReadOnlyProbeTool } from './probe.mjs'
+import {
+  extractArchive,
+  openMcpProbeSession,
+  requireReadOnlyProbeTool,
+  runMcpRequest,
+  throwIfRuntimeCancelled,
+} from './probe.mjs'
 
 const execFileAsync = promisify(execFile)
 const WARMUP_CALLS = 3
@@ -69,11 +75,13 @@ async function providerRss(pid) {
 
 async function successCall(session, probe, signal) {
   const started = performance.now()
-  const result = await session.client.callTool({ name: probe.tool, arguments: probe.arguments }, undefined, {
-    timeout: session.integration.runtime.timeoutMs,
-    maxTotalTimeout: session.integration.runtime.timeoutMs,
-    signal,
-  })
+  const result = await runMcpRequest(
+    () => session.client.callTool({ name: probe.tool, arguments: probe.arguments }, undefined, {
+      timeout: session.integration.runtime.timeoutMs,
+      maxTotalTimeout: session.integration.runtime.timeoutMs,
+    }),
+    { signal, cancellationCode: 'MEASURE_CANCELLED' },
+  )
   if (result.isError === true) throw new DeveloperKitError('MEASURE_PROBE_ERROR', 'The declared success probe returned a tool error during measurement.')
   const bytes = serializedBytes(result)
   return { durationMs: rounded(performance.now() - started), resultBytes: bytes }
@@ -116,6 +124,7 @@ export async function measureProject(rootInput, {
   signal,
 } = {}) {
   const overallStarted = performance.now()
+  throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
   const root = await requireDirectory(rootInput)
   const loaded = await loadProject(root, declaredPath)
   if (loaded.project.package === undefined) throw new DeveloperKitError('PACKAGE_NOT_DECLARED', 'The project does not declare a packaged Agent tool.')
@@ -124,18 +133,21 @@ export async function measureProject(rootInput, {
   const artifact = await resolveDeclaredFile(root, loaded.project.package.artifact, 'package artifact')
   const integration = await readBoundedJson(join(root, ...loaded.project.package.integration.replaceAll('\\', '/').split('/')), 'Agent Host integration')
   const observationRoot = join(root, '.verify', 'openadam-dev', `${timestamp()}-measure`)
+  throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'oadm-'))
   const extractedRoot = join(temporaryRoot, 'component')
   const workspaceRoot = join(temporaryRoot, 'workspace')
   await mkdir(extractedRoot)
   await mkdir(workspaceRoot)
   try {
+    throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
     await extractArchive(artifact, extractedRoot)
     const descriptor = await readBoundedJson(join(extractedRoot, 'component.json'), 'component descriptor')
     validateArtifact(loaded.project, descriptor, integration)
 
     const coldHome = join(temporaryRoot, 'cold-home')
     await mkdir(coldHome)
+    throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
     const coldStarted = performance.now()
     const cold = await openMcpProbeSession({
       extractedRoot,
@@ -161,6 +173,7 @@ export async function measureProject(rootInput, {
 
     const warmHome = join(temporaryRoot, 'warm-home')
     await mkdir(warmHome)
+    throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
     const warm = await openMcpProbeSession({
       extractedRoot,
       descriptor,
@@ -174,6 +187,7 @@ export async function measureProject(rootInput, {
     let measurement
     try {
       requireReadOnlyProbeTool(warm, probe)
+      throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
       const context = await contextCost(root, loaded.project, warm)
       for (let index = 0; index < WARMUP_CALLS; index += 1) await successCall(warm, probe, signal)
       const rssBefore = await providerRss(warm.transport.pid)
@@ -198,6 +212,7 @@ export async function measureProject(rootInput, {
         cancellationObserved = true
       }
       const recovery = await successCall(warm, probe, signal)
+      throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
       const rssAfter = await providerRss(warm.transport.pid)
       const resource = {
         cold: coldRss,
@@ -229,6 +244,7 @@ export async function measureProject(rootInput, {
     } finally {
       await warm.close().catch(() => {})
     }
+    throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
     if (performance.now() - overallStarted > deadlineMs) throw new DeveloperKitError('MEASURE_DEADLINE_EXCEEDED', 'The measurement completed after its declared deadline.')
     const result = {
       schemaVersion: 'openadam.developer-kit-measurement.v0.1',

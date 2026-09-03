@@ -25,7 +25,7 @@ async function writeJson(path, value) {
 
 function fixtureRuntime({ initialize = 'respond', recordPid = false } = {}) {
   return `
-import { writeFileSync } from 'node:fs'
+import { appendFileSync, writeFileSync } from 'node:fs'
 import readline from 'node:readline'
 const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
 const probeMode = process.env.OPENADAM_PROBE_MODE === '1'
@@ -34,11 +34,16 @@ if (${recordPid}) writeFileSync(process.env.HOME + '/provider.pid', String(proce
 function send(value) { process.stdout.write(JSON.stringify(value) + '\\n') }
 for await (const line of lines) {
   const request = JSON.parse(line)
+  if (${recordPid}) appendFileSync(process.env.HOME + '/requests.log', request.method + '\\n')
   if (request.id === undefined) continue
   if (request.method === 'initialize' && initializeMode === 'silent') continue
   if (request.method === 'initialize' && initializeMode === 'remote-timeout-code') { send({ jsonrpc: '2.0', id: request.id, error: { code: -32001, message: 'Provider rejected initialization immediately.' } }); await new Promise((resolve) => setTimeout(resolve, 250)); continue }
   if (request.method === 'initialize') send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion: request.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'fixture-tool', version: '0.1.0' } } })
+  else if (request.method === 'tools/list' && initializeMode === 'list-silent') continue
+  else if (request.method === 'tools/list' && initializeMode === 'list-remote-timeout-code') send({ jsonrpc: '2.0', id: request.id, error: { code: -32001, message: 'Provider rejected tool listing.' } })
   else if (request.method === 'tools/list') send({ jsonrpc: '2.0', id: request.id, result: { tools: probeMode ? [{ name: 'fixture.run', description: 'Run the fixture.', inputSchema: { type: 'object', additionalProperties: false, required: ['value'], properties: { value: { type: 'string', minLength: 1 } } }, outputSchema: { type: 'object', additionalProperties: false, required: ['status'], properties: { status: { const: 'ok' } } }, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }] : [] } })
+  else if (request.method === 'tools/call' && initializeMode === 'call-silent') continue
+  else if (request.method === 'tools/call' && initializeMode === 'call-remote-timeout-code') send({ jsonrpc: '2.0', id: request.id, error: { code: -32001, message: 'Provider rejected tool call.' } })
   else if (request.method === 'tools/call' && typeof request.params?.arguments?.value !== 'string') send({ jsonrpc: '2.0', id: request.id, error: { code: -32602, message: 'Invalid params' } })
   else if (request.method === 'tools/call') send({ jsonrpc: '2.0', id: request.id, result: { content: [{ type: 'text', text: 'ok' }], structuredContent: { status: 'ok' }, isError: false } })
   else send({ jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'Method not found' } })
@@ -50,7 +55,7 @@ async function writeFixtureRuntime(root, options) {
   await writeFile(join(root, 'payload/marketplace/plugins/fixture-tool/runtime/server.mjs'), fixtureRuntime(options))
 }
 
-async function waitForRecordedRuntime(before, { prefix = 'oadm-', home = 'cold-home' } = {}) {
+async function waitForRecordedRuntime(before, { prefix = 'oadm-', home = 'cold-home', request } = {}) {
   const deadline = Date.now() + 2000
   while (Date.now() < deadline) {
     for (const name of await readdir(tmpdir())) {
@@ -58,6 +63,10 @@ async function waitForRecordedRuntime(before, { prefix = 'oadm-', home = 'cold-h
       const root = join(tmpdir(), name)
       try {
         const pid = Number(await readFile(join(root, home, 'provider.pid'), 'utf8'))
+        if (request !== undefined) {
+          const requests = await readFile(join(root, home, 'requests.log'), 'utf8')
+          if (!requests.split('\n').includes(request)) continue
+        }
         if (Number.isSafeInteger(pid) && pid > 0) return { root, pid }
       } catch {}
     }
@@ -393,6 +402,51 @@ function hostPreviewFixture() {
   }
 }
 
+test('rejects already-cancelled pack and public probe before commands, Host preview, temporary roots, or artifact publication', async (t) => {
+  const packRoot = await fixture(t)
+  const projectPath = join(packRoot, 'agent-tool.json')
+  const project = JSON.parse(await readFile(projectPath, 'utf8'))
+  project.checks[0].command.args = ['-e', 'require("node:fs").writeFileSync("ran-check", "yes")']
+  await writeJson(projectPath, project)
+  await writeFile(join(packRoot, 'build.mjs'), `
+import { cp, writeFile } from 'node:fs/promises'
+await writeFile('ran-package', 'yes')
+await cp('payload', process.env.OPENADAM_COMPONENT_STAGE, { recursive: true })
+`)
+  const cancelled = new AbortController()
+  cancelled.abort()
+  await assert.rejects(packProject(packRoot, { signal: cancelled.signal }), (error) => {
+    assert.equal(error instanceof DeveloperKitError, true)
+    assert.equal(error.code, 'PACKAGE_CANCELLED')
+    assert.equal(error.details, undefined)
+    return true
+  })
+  for (const path of ['ran-check', 'ran-package', '.verify', 'dist/fixture-tool-0.1.0.tar.gz']) {
+    await assert.rejects(access(join(packRoot, path)), (error) => error?.code === 'ENOENT')
+  }
+
+  const probeRoot = await fixture(t)
+  await packProject(probeRoot)
+  const observationParent = join(probeRoot, '.verify', 'openadam-dev')
+  const beforeObservations = new Set(await readdir(observationParent))
+  const beforeTemporary = new Set(await readdir(tmpdir()))
+  let hostPreviewCalls = 0
+  await assert.rejects(probeProject(probeRoot, { signal: cancelled.signal }, {
+    hostPreview: async () => {
+      hostPreviewCalls += 1
+      return hostPreviewFixture()
+    },
+  }), (error) => {
+    assert.equal(error instanceof DeveloperKitError, true)
+    assert.equal(error.code, 'PROBE_CANCELLED')
+    assert.equal(error.details, undefined)
+    return true
+  })
+  assert.equal(hostPreviewCalls, 0)
+  assert.deepEqual((await readdir(observationParent)).filter((name) => !beforeObservations.has(name)), [])
+  assert.deepEqual((await readdir(tmpdir())).filter((name) => name.startsWith('oadp-') && !beforeTemporary.has(name)), [])
+})
+
 test('probes one valid and one invalid call through an extracted read-only runtime in explicit probe mode', async (t) => {
   const root = await fixture(t)
   await packProject(root)
@@ -576,15 +630,18 @@ test('keeps caller cancellation distinct, avoids pre-cancel spawn, cleans in-fli
 
   const observationParent = join(root, '.verify', 'openadam-dev')
   const beforePreCancelTemporaryEntries = new Set(await readdir(tmpdir()))
+  const beforePreCancelObservations = new Set(await readdir(observationParent))
   await assert.rejects(measureProject(root, { iterations: 5, concurrency: 2, signal: preCancelled.signal }), (error) => {
     assert.equal(error instanceof DeveloperKitError, true)
     assert.equal(error.code, 'MEASURE_CANCELLED')
-    assert.equal(typeof error.details.observationDirectory, 'string')
-    assert.equal(error.details.protocolCode, undefined)
+    assert.equal(error.details, undefined)
     return true
   })
   assert.deepEqual((await readdir(tmpdir())).filter(
     (name) => name.startsWith('oadm-') && !beforePreCancelTemporaryEntries.has(name),
+  ), [])
+  assert.deepEqual((await readdir(observationParent)).filter(
+    (name) => name.endsWith('-measure') && !beforePreCancelObservations.has(name),
   ), [])
 
   const apiController = new AbortController()
@@ -599,7 +656,7 @@ test('keeps caller cancellation distinct, avoids pre-cancel spawn, cleans in-fli
   assert.equal(apiOutcome.status, 'error')
   assert.equal(apiOutcome.error instanceof DeveloperKitError, true)
   assert.equal(apiOutcome.error.code, 'MEASURE_CANCELLED')
-  assert.equal(apiOutcome.error.message, 'The packed runtime connection was cancelled by its caller.')
+  assert.equal(apiOutcome.error.message, 'The packed runtime operation was cancelled by its caller.')
   assert.equal(apiOutcome.error.details.protocolCode, undefined)
   const apiPersisted = JSON.parse(await readFile(join(root, apiOutcome.error.details.observationDirectory, 'result.json'), 'utf8'))
   assert.equal(apiPersisted.error.code, 'MEASURE_CANCELLED')
@@ -621,7 +678,7 @@ test('keeps caller cancellation distinct, avoids pre-cancel spawn, cleans in-fli
   assert.equal(Buffer.byteLength(cliOutcome.stdout) < 64 * 1024, true)
   const cliResult = JSON.parse(cliOutcome.stdout)
   assert.equal(cliResult.error.code, 'MEASURE_CANCELLED')
-  assert.equal(cliResult.error.message, 'The packed runtime connection was cancelled by its caller.')
+  assert.equal(cliResult.error.message, 'The packed runtime operation was cancelled by its caller.')
   assert.equal(cliResult.error.details.protocolCode, undefined)
   assert.equal(/\n\s+at\s/u.test(cliOutcome.stdout), false)
   const cliPersisted = JSON.parse(await readFile(join(root, cliResult.observationDirectory, 'result.json'), 'utf8'))
@@ -658,6 +715,145 @@ test('keeps caller cancellation distinct, avoids pre-cancel spawn, cleans in-fli
   const recovered = await measureProject(root, { iterations: 5, concurrency: 2 })
   assert.equal(recovered.status, 'ok')
   assert.equal(recovered.measurement.warm.samples, 5)
+})
+
+test('preserves caller cancellation through MCP catalog and tool-call stages across API, CLI, and probe carriers', async (t) => {
+  async function measurementCancellation(mode, carrier) {
+    const root = await fixture(t, { runtimeInitialize: mode, runtimeTimeoutMs: 5000, recordRuntimePid: true })
+    await packProject(root)
+    const observationParent = join(root, '.verify', 'openadam-dev')
+    const beforeObservations = new Set(await readdir(observationParent))
+    const beforeTemporary = new Set(await readdir(tmpdir()))
+    const request = mode === 'list-silent' ? 'tools/list' : 'tools/call'
+    let pending
+    let cancel
+    if (carrier === 'api') {
+      const controller = new AbortController()
+      cancel = () => controller.abort()
+      pending = measureProject(root, { iterations: 5, concurrency: 2, signal: controller.signal }).then(
+        (value) => ({ status: 'ok', value }),
+        (error) => ({ status: 'error', error }),
+      )
+    } else {
+      const child = spawn(process.execPath, [cli, 'measure', '--root', root, '--iterations', '5', '--concurrency', '2', '--json'], {
+        stdio: ['ignore', 'pipe', 'pipe'],
+      })
+      cancel = () => child.kill('SIGTERM')
+      pending = collectChild(child).then((value) => ({ status: 'cli', value }))
+    }
+    const runtime = await waitForRecordedRuntime(beforeTemporary, { request })
+    assert.equal(cancel(), carrier === 'api' ? undefined : true)
+    const outcome = await pending
+    let result
+    if (carrier === 'api') {
+      assert.equal(outcome.status, 'error')
+      assert.equal(outcome.error instanceof DeveloperKitError, true)
+      assert.equal(outcome.error.code, 'MEASURE_CANCELLED')
+      assert.equal(outcome.error.message, 'The packed runtime operation was cancelled by its caller.')
+      assert.equal(outcome.error.details.protocolCode, undefined)
+      result = JSON.parse(await readFile(join(root, outcome.error.details.observationDirectory, 'result.json'), 'utf8'))
+    } else {
+      assert.equal(outcome.status, 'cli')
+      assert.equal(outcome.value.code, 1)
+      assert.equal(outcome.value.signal, null)
+      assert.equal(outcome.value.stderr, '')
+      result = JSON.parse(outcome.value.stdout)
+      assert.equal(result.error.code, 'MEASURE_CANCELLED')
+      assert.equal(result.error.message, 'The packed runtime operation was cancelled by its caller.')
+      assert.deepEqual(result.error.details, { observationDirectory: result.observationDirectory })
+      const persisted = JSON.parse(await readFile(join(root, result.observationDirectory, 'result.json'), 'utf8'))
+      assert.equal(persisted.error.code, 'MEASURE_CANCELLED')
+      assert.equal(persisted.error.details, undefined)
+    }
+    assert.equal(result.error.code, 'MEASURE_CANCELLED')
+    assert.equal(result.error.details?.protocolCode, undefined)
+    await assert.rejects(access(runtime.root), (error) => error?.code === 'ENOENT')
+    await waitForProcessExit(runtime.pid)
+    const observations = (await readdir(observationParent)).filter((name) => name.endsWith('-measure') && !beforeObservations.has(name))
+    assert.equal(observations.length, 1)
+    assert.deepEqual(await readdir(join(observationParent, observations[0])), ['result.json'])
+    await writeFixtureRuntime(root, { initialize: 'respond' })
+    await packProject(root, { replace: true })
+    const recovered = await measureProject(root, { iterations: 5, concurrency: 2 })
+    assert.equal(recovered.status, 'ok')
+    assert.equal(recovered.measurement.warm.samples, 5)
+  }
+
+  for (const mode of ['list-silent', 'call-silent']) {
+    await measurementCancellation(mode, 'api')
+    await measurementCancellation(mode, 'cli')
+  }
+
+  for (const mode of ['list-silent', 'call-silent']) {
+    const root = await fixture(t, { runtimeInitialize: mode, runtimeTimeoutMs: 5000, recordRuntimePid: true })
+    await packProject(root)
+    const observationParent = join(root, '.verify', 'openadam-dev')
+    const beforeObservations = new Set(await readdir(observationParent))
+    const beforeTemporary = new Set(await readdir(tmpdir()))
+    const controller = new AbortController()
+    const pending = probeProject(root, { signal: controller.signal }, { hostPreview: async () => hostPreviewFixture() }).then(
+      (value) => ({ status: 'ok', value }),
+      (error) => ({ status: 'error', error }),
+    )
+    const runtime = await waitForRecordedRuntime(beforeTemporary, {
+      prefix: 'oadp-',
+      home: 'home',
+      request: mode === 'list-silent' ? 'tools/list' : 'tools/call',
+    })
+    controller.abort()
+    const outcome = await pending
+    assert.equal(outcome.status, 'error')
+    assert.equal(outcome.error instanceof DeveloperKitError, true)
+    assert.equal(outcome.error.code, 'PROBE_CANCELLED')
+    assert.equal(outcome.error.message, 'The packed runtime operation was cancelled by its caller.')
+    assert.equal(outcome.error.details.protocolCode, undefined)
+    const persisted = JSON.parse(await readFile(join(root, outcome.error.details.observationDirectory, 'result.json'), 'utf8'))
+    assert.equal(persisted.error.code, 'PROBE_CANCELLED')
+    assert.equal(persisted.error.details, undefined)
+    await assert.rejects(access(runtime.root), (error) => error?.code === 'ENOENT')
+    await waitForProcessExit(runtime.pid)
+    const observations = (await readdir(observationParent)).filter((name) => name.endsWith('-probe') && !beforeObservations.has(name))
+    assert.equal(observations.length, 1)
+    assert.deepEqual(await readdir(join(observationParent, observations[0])), ['result.json'])
+    await writeFixtureRuntime(root, { initialize: 'respond' })
+    await packProject(root, { replace: true })
+    const recovered = await probeProject(root, {}, { hostPreview: async () => hostPreviewFixture() })
+    assert.equal(recovered.status, 'ok')
+  }
+})
+
+test('does not convert Provider -32001 or OS transport termination into caller cancellation', async (t) => {
+  const providerRoot = await fixture(t, { runtimeInitialize: 'call-remote-timeout-code', recordRuntimePid: true })
+  await packProject(providerRoot)
+  await assert.rejects(
+    probeProject(providerRoot, {}, { hostPreview: async () => hostPreviewFixture() }),
+    (error) => {
+      assert.equal(error instanceof DeveloperKitError, true)
+      assert.equal(error.code, 'PROBE_CALL_FAILED')
+      assert.equal(error.details.protocolCode, -32001)
+      return true
+    },
+  )
+
+  const transportRoot = await fixture(t, { runtimeInitialize: 'silent', runtimeTimeoutMs: 5000, recordRuntimePid: true })
+  await packProject(transportRoot)
+  const beforeTemporary = new Set(await readdir(tmpdir()))
+  const pending = measureProject(transportRoot, { iterations: 5, concurrency: 2 }).then(
+    (value) => ({ status: 'ok', value }),
+    (error) => ({ status: 'error', error }),
+  )
+  const runtime = await waitForRecordedRuntime(beforeTemporary, { request: 'initialize' })
+  process.kill(runtime.pid, 'SIGTERM')
+  const outcome = await pending
+  assert.equal(outcome.status, 'error')
+  assert.equal(outcome.error instanceof DeveloperKitError, true)
+  assert.equal(outcome.error.code, 'MEASURE_RUNTIME_CONNECT_FAILED')
+  assert.equal(outcome.error.details.protocolCode, -32000)
+  const persisted = JSON.parse(await readFile(join(transportRoot, outcome.error.details.observationDirectory, 'result.json'), 'utf8'))
+  assert.equal(persisted.error.code, 'MEASURE_RUNTIME_CONNECT_FAILED')
+  assert.equal(persisted.error.details.protocolCode, -32000)
+  await assert.rejects(access(runtime.root), (error) => error?.code === 'ENOENT')
+  await waitForProcessExit(runtime.pid)
 })
 
 test('measures the packed runtime across cold, warm, concurrent, cancellation, resource, and context lanes', async (t) => {

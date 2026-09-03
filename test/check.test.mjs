@@ -69,6 +69,22 @@ test('enforces command timeout and returns a stable reason', async () => {
   assert.equal(result.checks[0].reason, 'timeout')
 })
 
+test('rejects an already-cancelled check before creating observations or spawning its command', async () => {
+  const root = await fixture({
+    executable: process.execPath,
+    args: ['-e', 'require("node:fs").writeFileSync("ran", "yes")'],
+    timeoutMs: 5000,
+  })
+  const controller = new AbortController()
+  controller.abort()
+  await assert.rejects(checkProject(root, { signal: controller.signal }), (error) => {
+    assert.equal(error.code, 'CHECK_CANCELLED')
+    return true
+  })
+  await assert.rejects(access(join(root, 'ran')), (error) => error?.code === 'ENOENT')
+  await assert.rejects(access(join(root, '.verify')), (error) => error?.code === 'ENOENT')
+})
+
 test('does not execute checks while the scaffold marker remains', async () => {
   const root = await fixture({ executable: process.execPath, args: ['-e', 'process.exit(0)'] }, { scaffold: true })
   const result = await checkProject(root)

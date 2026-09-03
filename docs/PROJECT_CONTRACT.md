@@ -102,13 +102,17 @@ the live MCP catalog to advertise closed read-only annotations. Probe success
 means only that those exact calls behaved as declared; it is not semantic,
 quality, safety, or publication acceptance.
 
-Packed-runtime measurement distinguishes three initialization causes using
-Kit-owned signals: its declared deadline, caller cancellation, and Provider or
-transport rejection. It never infers cause from an SDK or JSON-RPC number. A
-Provider-originated initialize rejection, including JSON-RPC `-32001`, remains
-a bounded runtime-connect failure; caller cancellation is `MEASURE_CANCELLED`.
-Probe reports its own `PROBE_CANCELLED`. A signal already cancelled before
-connection may not construct a transport or spawn a Provider. In-flight
+Packed-runtime work distinguishes three initialization causes using Kit-owned
+signals: its declared deadline, caller cancellation, and Provider or transport
+rejection. It never infers cause from an SDK or JSON-RPC number. A
+Provider-originated rejection, including JSON-RPC `-32001`, remains a bounded
+Provider or transport failure; caller cancellation remains
+`MEASURE_CANCELLED` through initialization, catalog discovery, and direct
+calls. Probe reports its own `PROBE_CANCELLED` across the same phases. A signal
+already cancelled before check, pack, probe, or measure may not run a project
+command, invoke Host preview, construct a transport, spawn a Provider, publish
+an artifact, or create an observation; direct API errors are `CHECK_CANCELLED`,
+`PACKAGE_CANCELLED`, `PROBE_CANCELLED`, or `MEASURE_CANCELLED`. In-flight MCP
 cancellation waits for the owned transport to close before returning.
 Measurement observation directories are created only when a result is
 persisted; an early failure may not leave an empty observation directory or an

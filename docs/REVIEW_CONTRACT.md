@@ -112,11 +112,15 @@ discovery pass from the current product model and visible commands.
   The Kit's own deadline must not be inferred from that remote numeric code;
   API and CLI must return a separate bounded runtime-connect failure, perform
   the same cleanup, and recover after repair.
-- Pre-cancel an MCP connection and cancel another while initialize is pending.
-  Pre-cancel must not construct a transport or spawn a Provider. Measure and
-  probe must use their own stable cancellation errors; API and signal-driven
-  CLI cancellation must persist bounded results, clean child and temporary
-  resources, leave no empty observation directory, and recover afterward.
+- Pre-cancel check, pack, public probe, public measure, and the direct MCP
+  connection. They must run no project command or Host preview, construct no
+  transport, spawn no Provider, publish no artifact, and create no observation.
+  Separately cancel initialize, `tools/list`, and `tools/call` while each is
+  pending. Measure and probe must use their own stable cancellation errors; API
+  and signal-driven CLI cancellation must persist bounded results, clean child
+  and temporary resources, leave no empty observation directory, and recover
+  afterward. Provider-originated `-32001` and OS/transport termination must not
+  be converted into caller cancellation.
 - Enforce cumulative input, file, check-count, timeout, log, result, and artifact
   inventory bounds. Large diagnostics go to ignored artifacts and cannot flood
   the Agent response.

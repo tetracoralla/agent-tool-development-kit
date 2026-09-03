@@ -35,14 +35,34 @@ function isolatedEnvironment(home, additions = {}) {
   }
 }
 
+function cancelledResult(includeOutput) {
+  return {
+    status: 'cancelled',
+    exitCode: null,
+    reason: 'cancelled',
+    durationMs: 0,
+    stdoutBytes: 0,
+    stderrBytes: 0,
+    stdoutPreview: '',
+    stderrPreview: '',
+    ...(includeOutput ? { stdout: '', stderr: '' } : {}),
+  }
+}
+
 export async function runProjectCommand({ command, cwd, logDirectory, signal, remainingMs, environment = {}, includeOutput = false }) {
+  if (signal?.aborted) return cancelledResult(includeOutput)
   await mkdir(logDirectory, { recursive: true })
   const timeoutMs = Math.min(command.timeoutMs ?? DEFAULT_COMMAND_TIMEOUT_MS, remainingMs)
   const home = join(logDirectory, 'home')
   await mkdir(home, { recursive: true })
+  if (signal?.aborted) return cancelledResult(includeOutput)
   const started = performance.now()
 
   return new Promise((resolve) => {
+    if (signal?.aborted) {
+      resolve(cancelledResult(includeOutput))
+      return
+    }
     const child = spawn(command.executable, command.args ?? [], {
       cwd,
       env: isolatedEnvironment(home, environment),

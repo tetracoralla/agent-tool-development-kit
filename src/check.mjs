@@ -11,6 +11,14 @@ function timestamp() {
   return new Date().toISOString().replaceAll(':', '').replaceAll('.', '-')
 }
 
+function checkCancellationError() {
+  return new DeveloperKitError('CHECK_CANCELLED', 'The project check was cancelled by its caller.')
+}
+
+function throwIfCheckCancelled(signal) {
+  if (signal?.aborted) throw checkCancellationError()
+}
+
 async function exists(path) {
   try {
     return await lstat(path)
@@ -25,8 +33,10 @@ export async function checkProject(rootInput, {
   deadlineMs = DEFAULT_CHECK_DEADLINE_MS,
   signal,
 } = {}) {
+  throwIfCheckCancelled(signal)
   const root = await requireDirectory(rootInput)
   const loaded = await loadProject(root, declaredPath)
+  throwIfCheckCancelled(signal)
   const runId = timestamp()
   const outputRoot = join(root, '.verify', 'openadam-dev', runId)
   await mkdir(outputRoot, { recursive: true })
@@ -72,6 +82,7 @@ export async function checkProject(rootInput, {
   const controller = new AbortController()
   const forwardAbort = () => controller.abort(signal?.reason)
   signal?.addEventListener('abort', forwardAbort, { once: true })
+  if (signal?.aborted) forwardAbort()
   const started = performance.now()
   const checks = []
   try {

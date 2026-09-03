@@ -280,6 +280,30 @@ function summarizedChecks(result) {
   }
 }
 
+function packageCancellationError() {
+  return new DeveloperKitError('PACKAGE_CANCELLED', 'The package operation was cancelled by its caller.')
+}
+
+function throwIfPackageCancelled(signal) {
+  if (signal?.aborted) throw packageCancellationError()
+}
+
+async function persistPackageCancellation(signal, root, observationRoot, project) {
+  if (!signal?.aborted) return
+  const observationDirectory = relative(root, observationRoot)
+  const error = packageCancellationError()
+  await persistResult(observationRoot, {
+    schemaVersion: 'openadam.developer-kit-pack.v0.1',
+    status: 'error',
+    project: { id: project.id, version: project.version },
+    error: publicError(error),
+    observationDirectory,
+    mutation: 'not-performed',
+  })
+  error.details = { observationDirectory }
+  throw error
+}
+
 async function persistResult(outputRoot, result) {
   await writeFile(join(outputRoot, 'result.json'), `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 })
   return result
@@ -292,6 +316,7 @@ export async function packProject(rootInput, {
   signal,
 } = {}) {
   const started = performance.now()
+  throwIfPackageCancelled(signal)
   const inputRoot = resolve(rootInput)
   const root = await requireDirectory(rootInput)
   const loaded = await loadProject(root, declaredPath)
@@ -300,12 +325,22 @@ export async function packProject(rootInput, {
   const output = await outputTarget(root, loaded.project.package.artifact)
   const initialOutput = await outputSnapshot(output.target)
   if (initialOutput !== null && !replace) throw new DeveloperKitError('PACKAGE_ARTIFACT_EXISTS', 'The package artifact already exists; pass --replace to replace the exact observed file.')
+  throwIfPackageCancelled(signal)
 
   const runId = `${timestamp()}-pack`
   const observationRoot = join(root, '.verify', 'openadam-dev', runId)
   await mkdir(observationRoot, { recursive: true })
   const checkRemaining = Math.max(100, Math.floor(deadlineMs - (performance.now() - started)))
-  const validation = await checkProject(root, { declaredPath, deadlineMs: checkRemaining, signal })
+  let validation
+  try {
+    validation = await checkProject(root, { declaredPath, deadlineMs: checkRemaining, signal })
+  } catch (error) {
+    if (error instanceof DeveloperKitError && error.code === 'CHECK_CANCELLED' && signal?.aborted) {
+      await persistPackageCancellation(signal, root, observationRoot, loaded.project)
+    }
+    throw error
+  }
+  await persistPackageCancellation(signal, root, observationRoot, loaded.project)
   if (validation.status !== 'ok') {
     return persistResult(observationRoot, {
       schemaVersion: 'openadam.developer-kit-pack.v0.1',
@@ -318,6 +353,7 @@ export async function packProject(rootInput, {
     })
   }
   await loadToolIntegration(root, loaded.project.package, { expected: integration })
+  await persistPackageCancellation(signal, root, observationRoot, loaded.project)
 
   const temporaryRoot = await mkdtemp(join(observationRoot, '.pack-stage-'))
   const componentRoot = join(temporaryRoot, 'component')
@@ -326,6 +362,7 @@ export async function packProject(rootInput, {
   try {
     const remainingMs = Math.floor(deadlineMs - (performance.now() - started))
     if (remainingMs <= 0) throw new DeveloperKitError('PACKAGE_DEADLINE_EXCEEDED', 'The pack deadline expired before the package command could start.')
+    throwIfPackageCancelled(signal)
     const packageCommand = await runProjectCommand({
       command: loaded.project.package.command,
       cwd: root,
@@ -334,6 +371,7 @@ export async function packProject(rootInput, {
       remainingMs,
       environment: { OPENADAM_COMPONENT_STAGE: componentRoot },
     })
+    if (packageCommand.reason === 'cancelled' && signal?.aborted) throw packageCancellationError()
     if (packageCommand.status !== 'ok') {
       return persistResult(observationRoot, {
         schemaVersion: 'openadam.developer-kit-pack.v0.1',
@@ -348,6 +386,7 @@ export async function packProject(rootInput, {
     }
 
     await loadToolIntegration(root, loaded.project.package, { expected: integration })
+    throwIfPackageCancelled(signal)
 
     const files = await inventoryComponent(componentRoot, [root, inputRoot], temporaryRoot)
     const payload = await validatePayload(componentRoot, loaded.project, integration, files)
@@ -367,7 +406,9 @@ export async function packProject(rootInput, {
     await utimes(join(componentRoot, 'component.json'), FIXED_TIME, FIXED_TIME)
     const archive = await archiveComponent(componentRoot, descriptorBytes, files, stagedArchive)
     const descriptorSha256 = `sha256:${createHash('sha256').update(descriptorBytes).digest('hex')}`
+    throwIfPackageCancelled(signal)
     await ensureOutputParent(root, output)
+    throwIfPackageCancelled(signal)
     await publishArchive(stagedArchive, output.target, initialOutput, replace, temporaryRoot)
     return persistResult(observationRoot, {
       schemaVersion: 'openadam.developer-kit-pack.v0.1',

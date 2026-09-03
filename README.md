@@ -189,9 +189,11 @@ and current MCP catalog plus declared Skill bytes. With no owner-defined
 threshold it reports a baseline, never a general performance PASS.
 Its initialization deadline is owned by the Kit: a Provider-sent JSON-RPC
 `-32001` remains a distinct bounded connect failure rather than being reported
-as a locally observed timeout. Caller cancellation is a third Kit-owned cause:
-a pre-cancelled connection spawns no Provider, while cancellation during
-initialization waits for runtime cleanup and returns the operation's stable
+as a locally observed timeout. Caller cancellation is a third Kit-owned cause
+through initialization, catalog discovery, and direct calls. A pre-cancelled
+check, pack, probe, or measure request runs no project command or Host preview,
+spawns no Provider, creates no artifact, and writes no observation. In-flight
+runtime cancellation waits for cleanup and persists the operation's stable
 cancelled result.
 
 Maintainers can separately measure the packaged Developer Kit CLI itself with
