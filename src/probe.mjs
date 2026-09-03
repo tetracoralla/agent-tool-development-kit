@@ -7,6 +7,7 @@ import { createGunzip } from 'node:zlib'
 import { pipeline } from 'node:stream/promises'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
+import { ErrorCode } from '@modelcontextprotocol/sdk/types.js'
 import tarStream from 'tar-stream'
 import {
   DEFAULT_CHECK_DEADLINE_MS,
@@ -157,7 +158,27 @@ function resultBytes(value) {
   return bytes
 }
 
-export async function openMcpProbeSession({ extractedRoot, descriptor, workspaceRoot, home, signal }) {
+async function waitForTransportClose(closed) {
+  let timer
+  const timeout = new Promise((resolveTimeout) => {
+    timer = setTimeout(resolveTimeout, 5000)
+    timer.unref?.()
+  })
+  try {
+    await Promise.race([closed, timeout])
+  } finally {
+    clearTimeout(timer)
+  }
+}
+
+export async function openMcpProbeSession({
+  extractedRoot,
+  descriptor,
+  workspaceRoot,
+  home,
+  signal,
+  connectTimeoutCode = 'PROBE_RUNTIME_CONNECT_TIMEOUT',
+}) {
   const integration = descriptor.integration
   const runtimeCommand = contained(extractedRoot, integration.runtime.command, 'runtime command')
   const runtimeCwd = contained(extractedRoot, integration.runtime.cwd, 'runtime working directory')
@@ -178,13 +199,31 @@ export async function openMcpProbeSession({ extractedRoot, descriptor, workspace
     stderr: 'pipe',
     maxBufferSize: MAX_OUTPUT_BYTES,
   })
+  let resolveTransportClosed
+  const transportClosed = new Promise((resolveClosed) => {
+    resolveTransportClosed = resolveClosed
+  })
+  transport.onclose = resolveTransportClosed
   let stderrBytes = 0
   transport.stderr?.on('data', (chunk) => {
     stderrBytes += chunk.length
     if (stderrBytes > MAX_OUTPUT_BYTES) void transport.close().catch(() => {})
   })
   const client = new Client({ name: 'openadam-developer-kit-probe', version: '0.1.0' })
-  await client.connect(transport, { timeout: integration.runtime.timeoutMs, maxTotalTimeout: integration.runtime.timeoutMs, signal })
+  try {
+    await client.connect(transport, { timeout: integration.runtime.timeoutMs, maxTotalTimeout: integration.runtime.timeoutMs, signal })
+  } catch (error) {
+    await client.close().catch(() => {})
+    await waitForTransportClose(transportClosed)
+    if (error?.code === ErrorCode.RequestTimeout) {
+      throw new DeveloperKitError(
+        connectTimeoutCode,
+        'The packed runtime did not complete MCP initialization within its declared timeout.',
+        { timeoutMs: integration.runtime.timeoutMs },
+      )
+    }
+    throw error
+  }
   try {
     const listing = await client.listTools(undefined, { timeout: integration.runtime.timeoutMs, maxTotalTimeout: integration.runtime.timeoutMs, signal })
     const catalogBytes = resultBytes(listing.tools)

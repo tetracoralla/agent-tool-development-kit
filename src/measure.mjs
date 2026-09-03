@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, rmdir, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join, relative } from 'node:path'
 import { performance } from 'node:perf_hooks'
@@ -41,6 +41,18 @@ function serializedBytes(value) {
   const bytes = Buffer.byteLength(JSON.stringify(value))
   if (bytes > MAX_OUTPUT_BYTES) throw new DeveloperKitError('MEASURE_RESULT_LIMIT_EXCEEDED', 'A measured runtime result exceeds the serialized result limit.')
   return bytes
+}
+
+async function persistMeasurementResult(observationRoot, result) {
+  await mkdir(observationRoot, { recursive: true })
+  try {
+    await writeFile(join(observationRoot, 'result.json'), `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 })
+  } catch (error) {
+    // Remove only a still-empty directory. A partially or previously written
+    // observation remains available for recovery and diagnosis.
+    await rmdir(observationRoot).catch(() => {})
+    throw error
+  }
 }
 
 async function providerRss(pid) {
@@ -112,7 +124,6 @@ export async function measureProject(rootInput, {
   const artifact = await resolveDeclaredFile(root, loaded.project.package.artifact, 'package artifact')
   const integration = await readBoundedJson(join(root, ...loaded.project.package.integration.replaceAll('\\', '/').split('/')), 'Agent Host integration')
   const observationRoot = join(root, '.verify', 'openadam-dev', `${timestamp()}-measure`)
-  await mkdir(observationRoot, { recursive: true })
   const temporaryRoot = await mkdtemp(join(tmpdir(), 'oadm-'))
   const extractedRoot = join(temporaryRoot, 'component')
   const workspaceRoot = join(temporaryRoot, 'workspace')
@@ -126,7 +137,14 @@ export async function measureProject(rootInput, {
     const coldHome = join(temporaryRoot, 'cold-home')
     await mkdir(coldHome)
     const coldStarted = performance.now()
-    const cold = await openMcpProbeSession({ extractedRoot, descriptor, workspaceRoot, home: coldHome, signal })
+    const cold = await openMcpProbeSession({
+      extractedRoot,
+      descriptor,
+      workspaceRoot,
+      home: coldHome,
+      signal,
+      connectTimeoutCode: 'MEASURE_RUNTIME_CONNECT_TIMEOUT',
+    })
     let coldCall
     let coldRss
     try {
@@ -141,7 +159,14 @@ export async function measureProject(rootInput, {
 
     const warmHome = join(temporaryRoot, 'warm-home')
     await mkdir(warmHome)
-    const warm = await openMcpProbeSession({ extractedRoot, descriptor, workspaceRoot, home: warmHome, signal })
+    const warm = await openMcpProbeSession({
+      extractedRoot,
+      descriptor,
+      workspaceRoot,
+      home: warmHome,
+      signal,
+      connectTimeoutCode: 'MEASURE_RUNTIME_CONNECT_TIMEOUT',
+    })
     let measurement
     try {
       requireReadOnlyProbeTool(warm, probe)
@@ -219,7 +244,7 @@ export async function measureProject(rootInput, {
       durationMs: rounded(performance.now() - overallStarted),
       cleanup: 'completed',
     }
-    await writeFile(join(observationRoot, 'result.json'), `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 })
+    await persistMeasurementResult(observationRoot, result)
     return result
   } catch (error) {
     if (error instanceof DeveloperKitError) {
@@ -232,7 +257,7 @@ export async function measureProject(rootInput, {
         observationDirectory,
         cleanup: 'completed',
       }
-      await writeFile(join(observationRoot, 'result.json'), `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 })
+      await persistMeasurementResult(observationRoot, result)
       error.details = {
         ...(error.details !== null && typeof error.details === 'object' ? error.details : {}),
         observationDirectory,

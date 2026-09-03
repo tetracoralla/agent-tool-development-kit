@@ -102,6 +102,13 @@ the live MCP catalog to advertise closed read-only annotations. Probe success
 means only that those exact calls behaved as declared; it is not semantic,
 quality, safety, or publication acceptance.
 
+Packed-runtime measurement maps an MCP initialization timeout to one stable,
+bounded Developer Kit error and waits for the owned transport to close before
+returning. Measurement observation directories are created only when a result
+is persisted; an early failure may not leave an empty observation directory or
+an extracted runtime behind. A failure record that was successfully written is
+retained for interrupted-Agent recovery.
+
 The Kit does not embed or guess standards-runner arguments. A declared
 Capability or Procedure manifest must be paired with the repository's exact
 current conformance command in its dedicated lane. `check` then executes that

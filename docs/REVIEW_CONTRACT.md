@@ -103,6 +103,11 @@ discovery pass from the current product model and visible commands.
 - Use the packaged Developer Kit self-baseline for CLI startup and the packed
   provider measurement for direct runtime calls; neither can substitute for
   the other or for a comparable fresh-Agent task.
+- Make an extracted MCP runtime accept stdio but withhold its initialize reply.
+  The API and CLI must return one bounded `MEASURE_RUNTIME_CONNECT_TIMEOUT`,
+  close the Provider process, remove the extracted runtime, retain a written
+  failure result without leaving empty observation directories, and complete a
+  subsequent successful measurement after the runtime is repaired.
 - Enforce cumulative input, file, check-count, timeout, log, result, and artifact
   inventory bounds. Large diagnostics go to ignored artifacts and cannot flood
   the Agent response.

@@ -1,21 +1,91 @@
 import assert from 'node:assert/strict'
 import { createReadStream } from 'node:fs'
-import { chmod, mkdir, mkdtemp, readFile, rename, rm, symlink, writeFile } from 'node:fs/promises'
+import { access, chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createGunzip } from 'node:zlib'
 import test from 'node:test'
+import { setTimeout as delay } from 'node:timers/promises'
+import { execFile } from 'node:child_process'
+import { promisify } from 'node:util'
+import { fileURLToPath } from 'node:url'
 import tarStream from 'tar-stream'
 import { packProject, safePackProject } from '../src/pack.mjs'
 import { probeProject, safeProbeProject } from '../src/probe.mjs'
 import { measureProject, safeMeasureProject } from '../src/measure.mjs'
+import { DeveloperKitError } from '../src/errors.mjs'
+
+const execFileAsync = promisify(execFile)
+const cli = fileURLToPath(new URL('../src/cli.mjs', import.meta.url))
 
 async function writeJson(path, value) {
   await mkdir(join(path, '..'), { recursive: true })
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`)
 }
 
-async function fixture(t, { symlinkPayload = false, optionalPathEnvironment = [] } = {}) {
+function fixtureRuntime({ initialize = 'respond', recordPid = false } = {}) {
+  return `
+import { writeFileSync } from 'node:fs'
+import readline from 'node:readline'
+const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
+const probeMode = process.env.OPENADAM_PROBE_MODE === '1'
+const initializeMode = ${JSON.stringify(initialize)}
+if (${recordPid}) writeFileSync(process.env.HOME + '/provider.pid', String(process.pid))
+function send(value) { process.stdout.write(JSON.stringify(value) + '\\n') }
+for await (const line of lines) {
+  const request = JSON.parse(line)
+  if (request.id === undefined) continue
+  if (request.method === 'initialize' && initializeMode === 'silent') continue
+  if (request.method === 'initialize') send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion: request.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'fixture-tool', version: '0.1.0' } } })
+  else if (request.method === 'tools/list') send({ jsonrpc: '2.0', id: request.id, result: { tools: probeMode ? [{ name: 'fixture.run', description: 'Run the fixture.', inputSchema: { type: 'object', additionalProperties: false, required: ['value'], properties: { value: { type: 'string', minLength: 1 } } }, outputSchema: { type: 'object', additionalProperties: false, required: ['status'], properties: { status: { const: 'ok' } } }, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }] : [] } })
+  else if (request.method === 'tools/call' && typeof request.params?.arguments?.value !== 'string') send({ jsonrpc: '2.0', id: request.id, error: { code: -32602, message: 'Invalid params' } })
+  else if (request.method === 'tools/call') send({ jsonrpc: '2.0', id: request.id, result: { content: [{ type: 'text', text: 'ok' }], structuredContent: { status: 'ok' }, isError: false } })
+  else send({ jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'Method not found' } })
+}
+`
+}
+
+async function writeFixtureRuntime(root, options) {
+  await writeFile(join(root, 'payload/marketplace/plugins/fixture-tool/runtime/server.mjs'), fixtureRuntime(options))
+}
+
+async function waitForRecordedRuntime(before) {
+  const deadline = Date.now() + 2000
+  while (Date.now() < deadline) {
+    for (const name of await readdir(tmpdir())) {
+      if (!name.startsWith('oadm-') || before.has(name)) continue
+      const root = join(tmpdir(), name)
+      try {
+        const pid = Number(await readFile(join(root, 'cold-home', 'provider.pid'), 'utf8'))
+        if (Number.isSafeInteger(pid) && pid > 0) return { root, pid }
+      } catch {}
+    }
+    await delay(20)
+  }
+  throw new Error('The timeout fixture did not record its runtime process.')
+}
+
+async function waitForProcessExit(pid) {
+  const deadline = Date.now() + 2000
+  while (Date.now() < deadline) {
+    try {
+      process.kill(pid, 0)
+    } catch (error) {
+      if (error?.code === 'ESRCH') return
+      throw error
+    }
+    await delay(20)
+  }
+  throw new Error(`Runtime process ${pid} remained alive after measurement cleanup.`)
+}
+
+async function fixture(t, {
+  symlinkPayload = false,
+  optionalPathEnvironment = [],
+  runtimeInitialize = 'respond',
+  runtimeTimeoutMs = 5000,
+  recordRuntimePid = false,
+} = {}) {
   const root = await mkdtemp(join(tmpdir(), 'openadam-dev-pack-test-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   for (const path of ['docs', 'src', 'packaging', 'payload/marketplace/.agents/plugins', 'payload/marketplace/plugins/fixture-tool/.codex-plugin', 'payload/marketplace/plugins/fixture-tool/skills/fixture-tool', 'payload/marketplace/plugins/fixture-tool/runtime']) {
@@ -31,21 +101,7 @@ async function fixture(t, { symlinkPayload = false, optionalPathEnvironment = []
   await writeJson(join(root, 'payload/marketplace/plugins/fixture-tool/.codex-plugin/plugin.json'), { name: 'fixture-tool', version: '0.1.0' })
   await writeJson(join(root, 'payload/marketplace/plugins/fixture-tool/.mcp.json'), { mcpServers: { 'fixture-tool': { command: 'node', args: ['./runtime/server.mjs'] } } })
   await writeFile(join(root, 'payload/marketplace/plugins/fixture-tool/skills/fixture-tool/SKILL.md'), '---\nname: fixture-tool\ndescription: Use the fixture.\n---\n')
-  await writeFile(join(root, 'payload/marketplace/plugins/fixture-tool/runtime/server.mjs'), `
-import readline from 'node:readline'
-const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
-const probeMode = process.env.OPENADAM_PROBE_MODE === '1'
-function send(value) { process.stdout.write(JSON.stringify(value) + '\\n') }
-for await (const line of lines) {
-  const request = JSON.parse(line)
-  if (request.id === undefined) continue
-  if (request.method === 'initialize') send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion: request.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'fixture-tool', version: '0.1.0' } } })
-  else if (request.method === 'tools/list') send({ jsonrpc: '2.0', id: request.id, result: { tools: probeMode ? [{ name: 'fixture.run', description: 'Run the fixture.', inputSchema: { type: 'object', additionalProperties: false, required: ['value'], properties: { value: { type: 'string', minLength: 1 } } }, outputSchema: { type: 'object', additionalProperties: false, required: ['status'], properties: { status: { const: 'ok' } } }, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }] : [] } })
-  else if (request.method === 'tools/call' && typeof request.params?.arguments?.value !== 'string') send({ jsonrpc: '2.0', id: request.id, error: { code: -32602, message: 'Invalid params' } })
-  else if (request.method === 'tools/call') send({ jsonrpc: '2.0', id: request.id, result: { content: [{ type: 'text', text: 'ok' }], structuredContent: { status: 'ok' }, isError: false } })
-  else send({ jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'Method not found' } })
-}
-`)
+  await writeFixtureRuntime(root, { initialize: runtimeInitialize, recordPid: recordRuntimePid })
   await chmod(join(root, 'payload/marketplace/plugins/fixture-tool/runtime/server.mjs'), 0o755)
   await writeFile(join(root, 'payload/LICENSE'), 'Fixture private license.\n')
   await writeFile(join(root, 'payload/NOTICE'), 'Fixture notice.\n')
@@ -79,7 +135,7 @@ for await (const line of lines) {
       workspaceEnvironment: [],
       ...(optionalPathEnvironment.length === 0 ? {} : { optionalPathEnvironment }),
       expectedTools: ['fixture.run'],
-      timeoutMs: 5000,
+      timeoutMs: runtimeTimeoutMs,
     },
     ownership: { uninstall: 'agent-host-created-only' },
   })
@@ -359,6 +415,58 @@ test('persists a packed-runtime measurement failure for interrupted Agent recove
   assert.equal(typeof result.observationDirectory, 'string')
   const persisted = JSON.parse(await readFile(join(root, result.observationDirectory, 'result.json'), 'utf8'))
   assert.equal(persisted.error.code, 'MEASURE_PROJECT_ARTIFACT_DRIFT')
+})
+
+test('bounds MCP initialization timeout, preserves a real failure observation, cleans temporary resources, and recovers', async (t) => {
+  const root = await fixture(t, { runtimeInitialize: 'silent', runtimeTimeoutMs: 1000, recordRuntimePid: true })
+  await packProject(root)
+  const temporaryEntries = new Set(await readdir(tmpdir()))
+  const observationParent = join(root, '.verify', 'openadam-dev')
+  const beforeMeasure = new Set((await readdir(observationParent)).filter((name) => name.endsWith('-measure')))
+
+  const pending = measureProject(root, { iterations: 5, concurrency: 2 })
+  const runtime = await waitForRecordedRuntime(temporaryEntries)
+  process.kill(runtime.pid, 0)
+  await assert.rejects(pending, (error) => {
+    assert.equal(error instanceof DeveloperKitError, true)
+    assert.equal(error.code, 'MEASURE_RUNTIME_CONNECT_TIMEOUT')
+    assert.deepEqual(error.details, {
+      timeoutMs: 1000,
+      observationDirectory: error.details.observationDirectory,
+    })
+    assert.equal(Buffer.byteLength(JSON.stringify(error.details)) < 1024, true)
+    return true
+  })
+  await assert.rejects(access(runtime.root), (error) => error?.code === 'ENOENT')
+  await waitForProcessExit(runtime.pid)
+
+  const afterApi = (await readdir(observationParent)).filter((name) => name.endsWith('-measure') && !beforeMeasure.has(name))
+  assert.equal(afterApi.length, 1)
+  assert.deepEqual(await readdir(join(observationParent, afterApi[0])), ['result.json'])
+  const persisted = JSON.parse(await readFile(join(observationParent, afterApi[0], 'result.json'), 'utf8'))
+  assert.equal(persisted.error.code, 'MEASURE_RUNTIME_CONNECT_TIMEOUT')
+
+  await assert.rejects(execFileAsync(process.execPath, [cli, 'measure', '--root', root, '--iterations', '5', '--concurrency', '2', '--json'], {
+    timeout: 5000,
+    maxBuffer: 64 * 1024,
+  }), (error) => {
+    const result = JSON.parse(error.stdout)
+    assert.equal(error.code, 1)
+    assert.equal(error.stderr, '')
+    assert.equal(result.error.code, 'MEASURE_RUNTIME_CONNECT_TIMEOUT')
+    assert.equal(Buffer.byteLength(error.stdout) < 64 * 1024, true)
+    assert.equal(/\n\s+at\s/u.test(error.stdout), false)
+    return true
+  })
+  for (const name of (await readdir(observationParent)).filter((item) => item.endsWith('-measure'))) {
+    assert.equal((await readdir(join(observationParent, name))).includes('result.json'), true)
+  }
+
+  await writeFixtureRuntime(root, { initialize: 'respond' })
+  await packProject(root, { replace: true })
+  const recovered = await measureProject(root, { iterations: 5, concurrency: 2 })
+  assert.equal(recovered.status, 'ok')
+  assert.equal(recovered.measurement.warm.samples, 5)
 })
 
 test('measures the packed runtime across cold, warm, concurrent, cancellation, resource, and context lanes', async (t) => {
