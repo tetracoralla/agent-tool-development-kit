@@ -36,6 +36,7 @@ for await (const line of lines) {
   const request = JSON.parse(line)
   if (request.id === undefined) continue
   if (request.method === 'initialize' && initializeMode === 'silent') continue
+  if (request.method === 'initialize' && initializeMode === 'remote-timeout-code') { send({ jsonrpc: '2.0', id: request.id, error: { code: -32001, message: 'Provider rejected initialization immediately.' } }); await new Promise((resolve) => setTimeout(resolve, 250)); continue }
   if (request.method === 'initialize') send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion: request.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'fixture-tool', version: '0.1.0' } } })
   else if (request.method === 'tools/list') send({ jsonrpc: '2.0', id: request.id, result: { tools: probeMode ? [{ name: 'fixture.run', description: 'Run the fixture.', inputSchema: { type: 'object', additionalProperties: false, required: ['value'], properties: { value: { type: 'string', minLength: 1 } } }, outputSchema: { type: 'object', additionalProperties: false, required: ['status'], properties: { status: { const: 'ok' } } }, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }] : [] } })
   else if (request.method === 'tools/call' && typeof request.params?.arguments?.value !== 'string') send({ jsonrpc: '2.0', id: request.id, error: { code: -32602, message: 'Invalid params' } })
@@ -458,6 +459,74 @@ test('bounds MCP initialization timeout, preserves a real failure observation, c
     assert.equal(/\n\s+at\s/u.test(error.stdout), false)
     return true
   })
+  for (const name of (await readdir(observationParent)).filter((item) => item.endsWith('-measure'))) {
+    assert.equal((await readdir(join(observationParent, name))).includes('result.json'), true)
+  }
+
+  await writeFixtureRuntime(root, { initialize: 'respond' })
+  await packProject(root, { replace: true })
+  const recovered = await measureProject(root, { iterations: 5, concurrency: 2 })
+  assert.equal(recovered.status, 'ok')
+  assert.equal(recovered.measurement.warm.samples, 5)
+})
+
+test('keeps a Provider-originated -32001 initialize rejection distinct from a local measurement deadline', async (t) => {
+  const root = await fixture(t, { runtimeInitialize: 'remote-timeout-code', runtimeTimeoutMs: 1000, recordRuntimePid: true })
+  await packProject(root)
+  const observationParent = join(root, '.verify', 'openadam-dev')
+  const beforeMeasure = new Set((await readdir(observationParent)).filter((name) => name.endsWith('-measure')))
+
+  const temporaryEntries = new Set(await readdir(tmpdir()))
+  const pending = measureProject(root, { iterations: 5, concurrency: 2 }).then(
+    (value) => ({ status: 'ok', value }),
+    (error) => ({ status: 'error', error }),
+  )
+  const runtime = await waitForRecordedRuntime(temporaryEntries)
+  const apiOutcome = await pending
+  assert.equal(apiOutcome.status, 'error')
+  assert.equal(apiOutcome.error instanceof DeveloperKitError, true)
+  assert.equal(apiOutcome.error.code, 'MEASURE_RUNTIME_CONNECT_FAILED')
+  assert.equal(apiOutcome.error.message, 'The packed runtime failed or rejected MCP initialization.')
+  assert.deepEqual(apiOutcome.error.details, {
+    protocolCode: -32001,
+    observationDirectory: apiOutcome.error.details.observationDirectory,
+  })
+  assert.equal(Buffer.byteLength(JSON.stringify(apiOutcome.error.details)) < 1024, true)
+  await assert.rejects(access(runtime.root), (error) => error?.code === 'ENOENT')
+  await waitForProcessExit(runtime.pid)
+
+  const afterApi = (await readdir(observationParent)).filter((name) => name.endsWith('-measure') && !beforeMeasure.has(name))
+  assert.equal(afterApi.length, 1)
+  assert.deepEqual(await readdir(join(observationParent, afterApi[0])), ['result.json'])
+  const persisted = JSON.parse(await readFile(join(observationParent, afterApi[0], 'result.json'), 'utf8'))
+  assert.equal(persisted.error.code, 'MEASURE_RUNTIME_CONNECT_FAILED')
+  assert.equal(persisted.error.message, 'The packed runtime failed or rejected MCP initialization.')
+  assert.deepEqual(persisted.error.details, { protocolCode: -32001 })
+
+  const beforeCliTemporaryEntries = new Set(await readdir(tmpdir()))
+  const cliPending = execFileAsync(process.execPath, [cli, 'measure', '--root', root, '--iterations', '5', '--concurrency', '2', '--json'], {
+    timeout: 5000,
+    maxBuffer: 64 * 1024,
+  }).then(
+    (value) => ({ status: 'ok', value }),
+    (error) => ({ status: 'error', error }),
+  )
+  const cliOutcome = await cliPending
+  assert.equal(cliOutcome.status, 'error')
+  const result = JSON.parse(cliOutcome.error.stdout)
+  assert.equal(cliOutcome.error.code, 1)
+  assert.equal(cliOutcome.error.stderr, '')
+  assert.equal(result.error.code, 'MEASURE_RUNTIME_CONNECT_FAILED')
+  assert.equal(result.error.message, 'The packed runtime failed or rejected MCP initialization.')
+  assert.equal(result.error.details.protocolCode, -32001)
+  assert.equal(Buffer.byteLength(cliOutcome.error.stdout) < 64 * 1024, true)
+  assert.equal(/\n\s+at\s/u.test(cliOutcome.error.stdout), false)
+  assert.equal(cliOutcome.error.stdout.includes('Provider rejected initialization'), false)
+  const remainingCliTemporaryEntries = (await readdir(tmpdir())).filter(
+    (name) => name.startsWith('oadm-') && !beforeCliTemporaryEntries.has(name),
+  )
+  assert.deepEqual(remainingCliTemporaryEntries, [])
+
   for (const name of (await readdir(observationParent)).filter((item) => item.endsWith('-measure'))) {
     assert.equal((await readdir(join(observationParent, name))).includes('result.json'), true)
   }

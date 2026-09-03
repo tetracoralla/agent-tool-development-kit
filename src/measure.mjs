@@ -144,6 +144,7 @@ export async function measureProject(rootInput, {
       home: coldHome,
       signal,
       connectTimeoutCode: 'MEASURE_RUNTIME_CONNECT_TIMEOUT',
+      connectFailureCode: 'MEASURE_RUNTIME_CONNECT_FAILED',
     })
     let coldCall
     let coldRss
@@ -166,6 +167,7 @@ export async function measureProject(rootInput, {
       home: warmHome,
       signal,
       connectTimeoutCode: 'MEASURE_RUNTIME_CONNECT_TIMEOUT',
+      connectFailureCode: 'MEASURE_RUNTIME_CONNECT_FAILED',
     })
     let measurement
     try {

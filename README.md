@@ -187,6 +187,9 @@ startup, warm latency distribution, bounded concurrent throughput, a cancelled
 client call followed by same-session recovery, direct-provider RSS samples,
 and current MCP catalog plus declared Skill bytes. With no owner-defined
 threshold it reports a baseline, never a general performance PASS.
+Its initialization deadline is owned by the Kit: a Provider-sent JSON-RPC
+`-32001` remains a distinct bounded connect failure rather than being reported
+as a locally observed timeout.
 
 Maintainers can separately measure the packaged Developer Kit CLI itself with
 `npm run measure:self`. That baseline covers startup, bounded parallel starts,

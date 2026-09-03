@@ -7,7 +7,6 @@ import { createGunzip } from 'node:zlib'
 import { pipeline } from 'node:stream/promises'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
-import { ErrorCode } from '@modelcontextprotocol/sdk/types.js'
 import tarStream from 'tar-stream'
 import {
   DEFAULT_CHECK_DEADLINE_MS,
@@ -178,6 +177,7 @@ export async function openMcpProbeSession({
   home,
   signal,
   connectTimeoutCode = 'PROBE_RUNTIME_CONNECT_TIMEOUT',
+  connectFailureCode = 'PROBE_RUNTIME_CONNECT_FAILED',
 }) {
   const integration = descriptor.integration
   const runtimeCommand = contained(extractedRoot, integration.runtime.command, 'runtime command')
@@ -210,19 +210,37 @@ export async function openMcpProbeSession({
     if (stderrBytes > MAX_OUTPUT_BYTES) void transport.close().catch(() => {})
   })
   const client = new Client({ name: 'openadam-developer-kit-probe', version: '0.1.0' })
+  // MCP uses -32001 both for its own request timeout and for a Provider-sent
+  // JSON-RPC error carrying that number. Only this private sentinel establishes
+  // that the Developer Kit's declared initialization deadline actually fired.
+  const localConnectTimeout = Object.freeze({ kind: 'openadam-local-connect-timeout' })
+  let connectTimer
+  const connectDeadline = new Promise((_, reject) => {
+    connectTimer = setTimeout(() => reject(localConnectTimeout), integration.runtime.timeoutMs)
+    connectTimer.unref?.()
+  })
   try {
-    await client.connect(transport, { timeout: integration.runtime.timeoutMs, maxTotalTimeout: integration.runtime.timeoutMs, signal })
+    await Promise.race([
+      client.connect(transport, { signal }),
+      connectDeadline,
+    ])
   } catch (error) {
     await client.close().catch(() => {})
     await waitForTransportClose(transportClosed)
-    if (error?.code === ErrorCode.RequestTimeout) {
+    if (error === localConnectTimeout) {
       throw new DeveloperKitError(
         connectTimeoutCode,
         'The packed runtime did not complete MCP initialization within its declared timeout.',
         { timeoutMs: integration.runtime.timeoutMs },
       )
     }
-    throw error
+    throw new DeveloperKitError(
+      connectFailureCode,
+      'The packed runtime failed or rejected MCP initialization.',
+      { protocolCode: Number.isSafeInteger(error?.code) ? error.code : null },
+    )
+  } finally {
+    clearTimeout(connectTimer)
   }
   try {
     const listing = await client.listTools(undefined, { timeout: integration.runtime.timeoutMs, maxTotalTimeout: integration.runtime.timeoutMs, signal })

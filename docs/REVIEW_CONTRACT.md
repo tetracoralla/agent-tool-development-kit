@@ -108,6 +108,10 @@ discovery pass from the current product model and visible commands.
   close the Provider process, remove the extracted runtime, retain a written
   failure result without leaving empty observation directories, and complete a
   subsequent successful measurement after the runtime is repaired.
+- Make another runtime immediately reject initialize with JSON-RPC `-32001`.
+  The Kit's own deadline must not be inferred from that remote numeric code;
+  API and CLI must return a separate bounded runtime-connect failure, perform
+  the same cleanup, and recover after repair.
 - Enforce cumulative input, file, check-count, timeout, log, result, and artifact
   inventory bounds. Large diagnostics go to ignored artifacts and cannot flood
   the Agent response.
