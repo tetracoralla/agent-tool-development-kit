@@ -79,7 +79,7 @@ host state changes.
 
 ## Developer journeys
 
-### Discover one candidate from selected material
+### Discover candidates, then form one proposal from selected material
 
 At the user's request, the Developer Skill can guide their Agent through an
 explicitly selected set of saved sessions, Skills, shell work, reports,
@@ -92,6 +92,14 @@ monitoring, sweep unrelated private histories or repository files, copy raw
 transcripts or third-party projects into the provider, or convert usage
 frequency into a Capability, product ranking, architecture decision, or
 approval.
+
+For an explicitly authorized broad history, the Agent first builds a
+multi-label portfolio over root user jobs and gives every material semantic
+cluster a disposition before selecting one proposal. Corpus counts, successful
+parsing, lexical routes, or one investigated infrastructure hypothesis do not
+establish portfolio-wide opportunity recall. Unclassified and contradictory
+cases remain visible; an absence conclusion requires a disclosed cluster
+ledger and outlier pass, otherwise the result stays insufficient.
 
 `openadam-dev materials inspect` validates the exact caller-selected scope and
 binds local file content by digest. Reference-only sources, including Codex

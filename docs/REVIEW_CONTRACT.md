@@ -51,6 +51,14 @@ discovery pass from the current product model and visible commands.
   for upstream sensitive-content consent. A
   consequential adoption/effect claim requires a controlled task-native
   comparison or contemporaneous explicit Agent assessment.
+- Under an explicitly authorized broad-history scope, verify corpus coverage
+  and opportunity recall separately. Reproduce a multi-label root-job pass,
+  inspect bounded representatives, contradictions, and outliers, and require a
+  disposition for every material semantic cluster before accepting a
+  portfolio-wide “no Provider opportunity found” assessment. Parsing/counting
+  all records, one lexical route, or one preselected infrastructure hypothesis
+  is insufficient. External research must challenge the surviving portfolio,
+  not only the first selected candidate.
 - Proposal init binds current material bytes but produces an explicitly
   incomplete draft. Proposal check rejects placeholders, material drift,
   unlisted source references, missing counterevidence, missing simpler

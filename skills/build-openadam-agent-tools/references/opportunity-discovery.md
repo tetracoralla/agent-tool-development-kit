@@ -96,6 +96,64 @@ Cluster examples by semantic task. Two identical shell commands can serve
 different jobs, while different command sequences can implement the same
 operation. Frequency is a lead, never an automatic rank or nomination.
 
+## Discover a portfolio before selecting one proposal
+
+When the authorized scope spans many saved tasks, sessions, or projects, use a
+portfolio pass before `opportunity init`. This is a semantic-recall exercise,
+not a requirement to productize the corpus or to run a classifier inside the
+CLI.
+
+1. Normalize records to **root user jobs**. Attach subagent traces, retries,
+   review loops, and release follow-through to the job they served; do not count
+   them as independent demand. Preserve distinct jobs that happened to share a
+   repository or command.
+2. Build a **multi-label map** from task-native objects, operations, expected
+   artifacts or states, manual glue, failures, and constraints. Keep an
+   `unclassified/outlier` lane. A single lexical label, title keyword, tool
+   name, repository name, or dominant infrastructure theme is not a semantic
+   disposition.
+3. Generate candidate clusters through more than one retrieval view: domain
+   object and operation; repeated manual transformation; repeated failure or
+   recovery seam; and expected outcome or artifact. This reduces the chance
+   that Agent Host, review, release, or tool-development vocabulary hides a
+   concrete user operation inside the same session.
+4. Deep-read bounded representatives for every material cluster: at least a
+   typical root job, a contradictory or adjacent case, and an outlier or
+   ambiguous case when present. Cross-check more than one Shell when the cluster
+   appears in more than one. Inspect the task-native artifact or current source
+   when the summary cannot establish the operation or outcome. Record what was
+   not opened.
+5. Keep a **cluster disposition ledger**. For each material cluster, choose one
+   current disposition with a short basis: existing provider extension; new
+   provider-native operation candidate; existing Capability or Procedure
+   implementation candidate; Skill or repository-local method; no product; or
+   insufficient basis. This is Agent-authored working analysis, not a CLI score
+   or approval.
+6. Only after that ledger exists should the Agent select one or more surviving
+   candidates for existing-tool search, simpler alternatives, counterevidence,
+   and external research. Researching only the first infrastructure hypothesis
+   cannot corroborate an absence claim about the rest of the portfolio.
+
+Coverage counts and successful parsing answer “did we process the selected
+records?” They do not answer “did we retrieve every plausible product
+operation?” A broad run may say **no new Provider opportunity found within the
+reviewed scope** only when every material cluster has a disposition, the
+unclassified/outlier lane was reviewed, representative selection and unopened
+material are disclosed, and surviving candidates were checked against current
+alternatives. Otherwise report `insufficient basis for a portfolio-wide absence
+claim` and preserve the undisposed clusters.
+
+Avoid these recurring false-close patterns:
+
+- turning a full file/session inventory into a claim of full semantic analysis;
+- letting one preselected material-export or observability gap monopolize the
+  candidate pool;
+- treating current Skill/tool inventory as proof that a task is already served;
+- collapsing domain work into generic review, release, UI, or infrastructure
+  labels before examining its stable operation;
+- using `opportunity check` success as proof that candidate generation or
+  portfolio recall was adequate.
+
 Use this coverage table before interpreting operational data:
 
 | Question | Passive Observer | Additional route |

@@ -54,6 +54,16 @@ Do not recursively scan generic Skill roots, Agent state directories, or
 session stores to approximate an inventory. Use an installed Agent Host compact
 snapshot only when already available and authorized.
 
+When the caller explicitly authorizes a broad history scope, keep **corpus
+coverage** separate from **opportunity recall**. Parsing every record, counting
+every session, or routing every summary into broad labels establishes only the
+former. Before selecting one hypothesis, build a multi-label semantic portfolio
+over root user jobs, examine representatives, counterexamples, and outliers,
+and give every material task cluster an explicit disposition. Do not conclude
+that no Provider opportunity exists while clusters remain undisposed or were
+collapsed into infrastructure, review, or Host-maintenance themes. The detailed
+portfolio route and stopping rule are in `references/opportunity-discovery.md`.
+
 When the user selects an Agent Host Trace Analysis Pack, treat it as an
 `agent-trace` local file. Prefer its metadata-only form. Content-bearing export
 requires the user to select one source and confirm sensitive-content inclusion
