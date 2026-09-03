@@ -27,7 +27,7 @@ import {
   MAX_COMPONENT_FILES,
   MAX_COMPONENT_PATH_BYTES,
   PROJECT_FILE,
-  TOOL_INTEGRATION_SCHEMA_VERSION,
+  TOOL_INTEGRATION_SCHEMA_VERSIONS,
 } from './constants.mjs'
 import { loadProject } from './contracts.mjs'
 import { DeveloperKitError, publicError } from './errors.mjs'
@@ -126,8 +126,8 @@ function stringArray(value, label, minimum = 0) {
 
 function validateIntegration(value, componentId) {
   exactKeys(value, ['schemaVersion', 'displayName', 'summary', 'codex', 'runtime', 'ownership'], 'tool integration')
-  if (value.schemaVersion !== TOOL_INTEGRATION_SCHEMA_VERSION) {
-    throw new DeveloperKitError('TOOL_INTEGRATION_UNSUPPORTED', `Only ${TOOL_INTEGRATION_SCHEMA_VERSION} is supported by this Developer Kit version.`)
+  if (!TOOL_INTEGRATION_SCHEMA_VERSIONS.includes(value.schemaVersion)) {
+    throw new DeveloperKitError('TOOL_INTEGRATION_UNSUPPORTED', `Only ${TOOL_INTEGRATION_SCHEMA_VERSIONS.join(' or ')} is supported by this Developer Kit version.`)
   }
   boundedString(value.displayName, 'tool display name', 80)
   boundedString(value.summary, 'tool summary', 180)
@@ -143,7 +143,9 @@ function validateIntegration(value, componentId) {
   }
   for (const path of stringArray(value.codex.identityFiles, 'Codex identity files', 2)) componentPath(path, 'Codex identity file')
 
-  exactKeys(value.runtime, ['transport', 'executor', 'command', 'args', 'cwd', 'workspaceEnvironment', 'expectedTools', 'timeoutMs'], 'runtime integration')
+  const runtimeKeys = ['transport', 'executor', 'command', 'args', 'cwd', 'workspaceEnvironment', 'expectedTools', 'timeoutMs']
+  if (value.schemaVersion === 'openadam.agent-host-tool-integration.v0.5') runtimeKeys.push('optionalPathEnvironment')
+  exactKeys(value.runtime, runtimeKeys, 'runtime integration')
   if (value.runtime.transport !== 'mcp-stdio' || !['component', 'suite-node'].includes(value.runtime.executor)) {
     throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', 'The runtime must use MCP stdio and a component or suite-node executor.')
   }
@@ -153,6 +155,15 @@ function validateIntegration(value, componentId) {
   const workspaceEnvironment = stringArray(value.runtime.workspaceEnvironment, 'workspace environment')
   if (workspaceEnvironment.some((name) => !/^[A-Z][A-Z0-9_]*$/u.test(name))) {
     throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', 'Workspace environment names must use upper-case identifier syntax.')
+  }
+  const optionalPathEnvironment = value.schemaVersion === 'openadam.agent-host-tool-integration.v0.5'
+    ? stringArray(value.runtime.optionalPathEnvironment ?? [], 'optional path environment')
+    : []
+  if (optionalPathEnvironment.some((name) => !/^[A-Z][A-Z0-9_]*$/u.test(name))) {
+    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', 'Optional path environment names must use upper-case identifier syntax.')
+  }
+  if (optionalPathEnvironment.some((name) => workspaceEnvironment.includes(name))) {
+    throw new DeveloperKitError('TOOL_INTEGRATION_INVALID', 'Workspace and optional path environment names must be distinct.')
   }
   stringArray(value.runtime.expectedTools, 'expected tools', 1)
   if (!Number.isSafeInteger(value.runtime.timeoutMs) || value.runtime.timeoutMs < 1000 || value.runtime.timeoutMs > 30000) {

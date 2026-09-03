@@ -27,3 +27,34 @@ test('reports an invalid declaration as an observation', async () => {
   assert.equal(result.projectDeclaration.status, 'invalid')
   assert.equal(result.projectDeclaration.error.code, 'PROJECT_SCHEMA_INVALID')
 })
+
+test('does not let a Python virtual environment hide a root project declaration', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'openadam-dev-monorepo-package-'))
+  await mkdir(join(root, '.venv', 'lib'), { recursive: true })
+  for (let index = 0; index < 4100; index += 1) {
+    await writeFile(join(root, '.venv', 'lib', `entry-${index}.schema.json`), '{}\n')
+  }
+  await writeFile(join(root, 'agent-tool.json'), JSON.stringify({
+    schemaVersion: 'openadam.agent-tool-project.v0.1',
+    id: 'monorepo-package',
+    version: '0.1.0',
+    name: 'Monorepo Package',
+    summary: 'A package selected below a larger repository root.',
+    documents: { productModel: 'PRODUCT_MODEL.md', reviewContract: 'REVIEW_CONTRACT.md' },
+    checks: [{ id: 'check', lane: 'development-regression', command: { executable: 'node' } }],
+    carriers: [],
+  }) + '\n')
+  await writeFile(join(root, 'PRODUCT_MODEL.md'), '# Product\n')
+  await writeFile(join(root, 'REVIEW_CONTRACT.md'), '# Review\n')
+
+  const result = await inspectProject(root)
+  assert.deepEqual(result.projectDeclaration, {
+    present: true,
+    status: 'valid',
+    schemaVersion: 'openadam.agent-tool-project.v0.1',
+    id: 'monorepo-package',
+    version: '0.1.0',
+  })
+  assert.equal(result.discovery.truncated, false)
+  assert.equal(result.discovery.entriesSeen < 20, true)
+})

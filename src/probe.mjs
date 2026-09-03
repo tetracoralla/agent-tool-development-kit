@@ -166,6 +166,7 @@ export async function openMcpProbeSession({ extractedRoot, descriptor, workspace
   const environment = Object.fromEntries(['PATH', 'LANG', 'LC_ALL'].flatMap((name) => process.env[name] === undefined ? [] : [[name, process.env[name]]]))
   environment.HOME = home
   environment.TMPDIR = join(home, 'tmp')
+  environment.OPENADAM_PROBE_MODE = '1'
   for (const name of integration.runtime.workspaceEnvironment ?? []) environment[name] = workspaceRoot
   await mkdir(environment.TMPDIR, { recursive: true })
 

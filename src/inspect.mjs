@@ -6,7 +6,10 @@ import { DeveloperKitError, publicError } from './errors.mjs'
 import { requireDirectory } from './paths.mjs'
 import { probeCommand } from './process.mjs'
 
-const ignoredDirectories = new Set(['.git', '.verify', 'node_modules', 'dist', 'build', 'coverage', '.next', '.cache'])
+const ignoredDirectories = new Set([
+  '.git', '.verify', '.venv', '__pycache__', 'node_modules', 'dist', 'build',
+  'coverage', '.next', '.cache', 'target', 'vendor',
+])
 const exactNames = new Set([
   'AGENTS.md', 'PRODUCT_MODEL.md', 'REVIEW_CONTRACT.md', 'SKILL.md', 'package.json',
   'pyproject.toml', 'Cargo.toml', 'provider.json', 'implementation-manifest.json',

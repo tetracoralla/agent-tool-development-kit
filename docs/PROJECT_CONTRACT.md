@@ -53,7 +53,14 @@ The first version records only facts with current consumers:
 - a distinct `capability-conformance` or `procedure-conformance` command lane
   whenever the corresponding manifest is declared;
 - one explicit package command, component id, repository-relative artifact and
-  Agent Host v0.2 integration when the project supports packaging;
+  Agent Host v0.2 integration, or v0.5 when a current Provider requires
+  separately authorized optional host path roots, when the project supports
+  packaging;
+- direct package probes set `OPENADAM_PROBE_MODE=1` in their credential-free
+  temporary process. A Provider may use that signal to remove an otherwise
+  open-world route from the current probe behavior and catalog annotation, but
+  the flag is not a process or network sandbox; the live catalog must still
+  report closed read-only annotations before the Kit makes any call;
 - exact component-relative legal files and an owner-supplied SPDX expression;
 - two to eight bounded read-only runtime probes, including at least one
   expected success and one expected tool or protocol error.

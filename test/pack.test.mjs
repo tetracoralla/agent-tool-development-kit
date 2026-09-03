@@ -15,7 +15,7 @@ async function writeJson(path, value) {
   await writeFile(path, `${JSON.stringify(value, null, 2)}\n`)
 }
 
-async function fixture(t, { symlinkPayload = false } = {}) {
+async function fixture(t, { symlinkPayload = false, optionalPathEnvironment = [] } = {}) {
   const root = await mkdtemp(join(tmpdir(), 'openadam-dev-pack-test-'))
   t.after(() => rm(root, { recursive: true, force: true }))
   for (const path of ['docs', 'src', 'packaging', 'payload/marketplace/.agents/plugins', 'payload/marketplace/plugins/fixture-tool/.codex-plugin', 'payload/marketplace/plugins/fixture-tool/skills/fixture-tool', 'payload/marketplace/plugins/fixture-tool/runtime']) {
@@ -34,12 +34,13 @@ async function fixture(t, { symlinkPayload = false } = {}) {
   await writeFile(join(root, 'payload/marketplace/plugins/fixture-tool/runtime/server.mjs'), `
 import readline from 'node:readline'
 const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
+const probeMode = process.env.OPENADAM_PROBE_MODE === '1'
 function send(value) { process.stdout.write(JSON.stringify(value) + '\\n') }
 for await (const line of lines) {
   const request = JSON.parse(line)
   if (request.id === undefined) continue
   if (request.method === 'initialize') send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion: request.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'fixture-tool', version: '0.1.0' } } })
-  else if (request.method === 'tools/list') send({ jsonrpc: '2.0', id: request.id, result: { tools: [{ name: 'fixture.run', description: 'Run the fixture.', inputSchema: { type: 'object', additionalProperties: false, required: ['value'], properties: { value: { type: 'string', minLength: 1 } } }, outputSchema: { type: 'object', additionalProperties: false, required: ['status'], properties: { status: { const: 'ok' } } }, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }] } })
+  else if (request.method === 'tools/list') send({ jsonrpc: '2.0', id: request.id, result: { tools: probeMode ? [{ name: 'fixture.run', description: 'Run the fixture.', inputSchema: { type: 'object', additionalProperties: false, required: ['value'], properties: { value: { type: 'string', minLength: 1 } } }, outputSchema: { type: 'object', additionalProperties: false, required: ['status'], properties: { status: { const: 'ok' } } }, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }] : [] } })
   else if (request.method === 'tools/call' && typeof request.params?.arguments?.value !== 'string') send({ jsonrpc: '2.0', id: request.id, error: { code: -32602, message: 'Invalid params' } })
   else if (request.method === 'tools/call') send({ jsonrpc: '2.0', id: request.id, result: { content: [{ type: 'text', text: 'ok' }], structuredContent: { status: 'ok' }, isError: false } })
   else send({ jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'Method not found' } })
@@ -57,7 +58,9 @@ for await (const line of lines) {
   })
   if (symlinkPayload) await symlink('server.mjs', join(root, 'payload/marketplace/plugins/fixture-tool/runtime/linked.mjs'))
   await writeJson(join(root, 'packaging/integration.json'), {
-    schemaVersion: 'openadam.agent-host-tool-integration.v0.2',
+    schemaVersion: optionalPathEnvironment.length === 0
+      ? 'openadam.agent-host-tool-integration.v0.2'
+      : 'openadam.agent-host-tool-integration.v0.5',
     displayName: 'Fixture Tool',
     summary: 'A deterministic package fixture.',
     codex: {
@@ -74,6 +77,7 @@ for await (const line of lines) {
       args: [],
       cwd: 'marketplace/plugins/fixture-tool',
       workspaceEnvironment: [],
+      ...(optionalPathEnvironment.length === 0 ? {} : { optionalPathEnvironment }),
       expectedTools: ['fixture.run'],
       timeoutMs: 5000,
     },
@@ -200,6 +204,27 @@ test('builds a deterministic bounded Agent Host component without inheriting cre
   assert.deepEqual(secondBytes, firstBytes)
 })
 
+test('packages v0.5 optional path environment declarations without granting machine paths', async (t) => {
+  const root = await fixture(t, { optionalPathEnvironment: ['PLUGIN_CACHE_ROOTS', 'APPLICATION_ROOTS'] })
+  const result = await packProject(root)
+  assert.equal(result.status, 'ok')
+  const descriptor = await descriptorFromArchive(join(root, result.artifact.path))
+  assert.equal(descriptor.integration.schemaVersion, 'openadam.agent-host-tool-integration.v0.5')
+  assert.deepEqual(descriptor.integration.runtime.optionalPathEnvironment, ['PLUGIN_CACHE_ROOTS', 'APPLICATION_ROOTS'])
+  assert.equal(JSON.stringify(descriptor).includes(root), false)
+})
+
+test('rejects a v0.5 optional path environment that overlaps the workspace grant', async (t) => {
+  const root = await fixture(t, { optionalPathEnvironment: ['PLUGIN_CACHE_ROOTS'] })
+  const integrationPath = join(root, 'packaging/integration.json')
+  const integration = JSON.parse(await readFile(integrationPath, 'utf8'))
+  integration.runtime.workspaceEnvironment = ['PLUGIN_CACHE_ROOTS']
+  await writeJson(integrationPath, integration)
+  const result = await safePackProject(root)
+  assert.equal(result.status, 'error')
+  assert.equal(result.error.code, 'TOOL_INTEGRATION_INVALID')
+})
+
 test('refuses an existing artifact unless exact replacement is explicit', async (t) => {
   const root = await fixture(t)
   await packProject(root)
@@ -242,7 +267,7 @@ function hostPreviewFixture() {
   }
 }
 
-test('probes one valid and one invalid call through an extracted read-only runtime', async (t) => {
+test('probes one valid and one invalid call through an extracted read-only runtime in explicit probe mode', async (t) => {
   const root = await fixture(t)
   await packProject(root)
   const result = await probeProject(root, {}, { hostPreview: async () => hostPreviewFixture() })
