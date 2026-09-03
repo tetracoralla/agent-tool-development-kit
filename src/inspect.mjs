@@ -7,7 +7,7 @@ import { requireDirectory } from './paths.mjs'
 import { probeCommand } from './process.mjs'
 
 const ignoredDirectories = new Set([
-  '.git', '.verify', '.venv', '__pycache__', 'node_modules', 'dist', 'build',
+  '.build', '.git', '.lake', '.verify', '.venv', '__pycache__', 'node_modules', 'dist', 'build',
   'coverage', '.next', '.cache', 'target', 'vendor',
 ])
 const exactNames = new Set([
@@ -98,7 +98,14 @@ export async function inspectProject(rootInput) {
     packageObservation(root, 'Cargo.toml', 'rust'),
   ])
   let declaration = { present: false }
-  if (discovery.files.includes(PROJECT_FILE)) {
+  let declarationPresent = false
+  try {
+    await lstat(join(root, PROJECT_FILE))
+    declarationPresent = true
+  } catch (error) {
+    if (error?.code !== 'ENOENT') throw error
+  }
+  if (declarationPresent) {
     try {
       const loaded = await loadProject(root, PROJECT_FILE)
       declaration = {

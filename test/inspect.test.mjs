@@ -28,22 +28,30 @@ test('reports an invalid declaration as an observation', async () => {
   assert.equal(result.projectDeclaration.error.code, 'PROJECT_SCHEMA_INVALID')
 })
 
-test('does not let a Python virtual environment hide a root project declaration', async () => {
-  const root = await mkdtemp(join(tmpdir(), 'openadam-dev-monorepo-package-'))
-  await mkdir(join(root, '.venv', 'lib'), { recursive: true })
-  for (let index = 0; index < 4100; index += 1) {
-    await writeFile(join(root, '.venv', 'lib', `entry-${index}.schema.json`), '{}\n')
-  }
-  await writeFile(join(root, 'agent-tool.json'), JSON.stringify({
+function projectDeclaration(id = 'monorepo-package') {
+  return {
     schemaVersion: 'openadam.agent-tool-project.v0.1',
-    id: 'monorepo-package',
+    id,
     version: '0.1.0',
     name: 'Monorepo Package',
     summary: 'A package selected below a larger repository root.',
     documents: { productModel: 'PRODUCT_MODEL.md', reviewContract: 'REVIEW_CONTRACT.md' },
     checks: [{ id: 'check', lane: 'development-regression', command: { executable: 'node' } }],
     carriers: [],
-  }) + '\n')
+  }
+}
+
+test('does not let ignored environment and build directories hide a root project declaration', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'openadam-dev-monorepo-package-'))
+  await mkdir(join(root, '.venv', 'lib'), { recursive: true })
+  await mkdir(join(root, '.build', 'artifacts'), { recursive: true })
+  await mkdir(join(root, 'integrations', 'lean', '.lake', 'build'), { recursive: true })
+  for (let index = 0; index < 4100; index += 1) {
+    await writeFile(join(root, '.venv', 'lib', `entry-${index}.schema.json`), '{}\n')
+    await writeFile(join(root, '.build', 'artifacts', `entry-${index}.schema.json`), '{}\n')
+  }
+  await writeFile(join(root, 'integrations', 'lean', '.lake', 'build', 'hidden.schema.json'), '{}\n')
+  await writeFile(join(root, 'agent-tool.json'), JSON.stringify(projectDeclaration()) + '\n')
   await writeFile(join(root, 'PRODUCT_MODEL.md'), '# Product\n')
   await writeFile(join(root, 'REVIEW_CONTRACT.md'), '# Review\n')
 
@@ -56,5 +64,27 @@ test('does not let a Python virtual environment hide a root project declaration'
     version: '0.1.0',
   })
   assert.equal(result.discovery.truncated, false)
+  assert.equal(result.discovery.files.includes('integrations/lean/.lake/build/hidden.schema.json'), false)
   assert.equal(result.discovery.entriesSeen < 20, true)
+})
+
+test('loads the root project declaration independently when discovery is truncated', async () => {
+  const root = await mkdtemp(join(tmpdir(), 'openadam-dev-truncated-'))
+  await mkdir(join(root, 'aaa-generated'), { recursive: true })
+  for (let index = 0; index < 4100; index += 1) {
+    await writeFile(join(root, 'aaa-generated', `entry-${index}.schema.json`), '{}\n')
+  }
+  await writeFile(join(root, 'agent-tool.json'), JSON.stringify(projectDeclaration('truncated-project')) + '\n')
+  await writeFile(join(root, 'PRODUCT_MODEL.md'), '# Product\n')
+  await writeFile(join(root, 'REVIEW_CONTRACT.md'), '# Review\n')
+
+  const result = await inspectProject(root)
+  assert.equal(result.discovery.truncated, true)
+  assert.deepEqual(result.projectDeclaration, {
+    present: true,
+    status: 'valid',
+    schemaVersion: 'openadam.agent-tool-project.v0.1',
+    id: 'truncated-project',
+    version: '0.1.0',
+  })
 })
