@@ -37,6 +37,10 @@ rollback, and removal.
   absolute, parent, URI, special-file, and symlink escape.
 - Represent commands as executable plus argument arrays. Do not run project
   command strings through a shell.
+- Keep packed-runtime shutdown claims scoped to what the Kit owns and observes.
+  On POSIX this is the isolated process group; a Provider running with
+  `OPENADAM_PROBE_MODE=1` must not daemonize, create another session/process
+  group, or otherwise escape that scope.
 - Scaffold and package through a complete preflight. Dry-run must perform the
   same path, collision, overwrite, and output-boundary checks without writing.
 - Never overwrite existing project files unless the caller names the exact

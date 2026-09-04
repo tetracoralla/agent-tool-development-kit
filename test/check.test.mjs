@@ -69,6 +69,25 @@ test('enforces command timeout and returns a stable reason', async () => {
   assert.equal(result.checks[0].reason, 'timeout')
 })
 
+test('terminates a timed-out project command and its same-group descendant before returning', {
+  skip: process.platform === 'win32',
+}, async () => {
+  const source = [
+    'const { spawn } = require("node:child_process")',
+    'const { writeFileSync } = require("node:fs")',
+    'const child = spawn(process.execPath, ["-e", "setInterval(() => {}, 1000)"], { stdio: "ignore" })',
+    'writeFileSync("descendant.pid", String(child.pid))',
+    'setInterval(() => {}, 1000)',
+  ].join(';')
+  const root = await fixture({ executable: process.execPath, args: ['-e', source], timeoutMs: 1000 })
+  const result = await checkProject(root, { deadlineMs: 5000 })
+  const descendantPid = Number(await readFile(join(root, 'descendant.pid'), 'utf8'))
+
+  assert.equal(result.status, 'error')
+  assert.equal(result.checks[0].reason, 'timeout')
+  assert.throws(() => process.kill(descendantPid, 0), (error) => error?.code === 'ESRCH')
+})
+
 test('rejects an already-cancelled check before creating observations or spawning its command', async () => {
   const root = await fixture({
     executable: process.execPath,

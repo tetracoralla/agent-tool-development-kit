@@ -31,7 +31,7 @@ try {
   assert.equal(componentSbom.packages.find((item) => item.SPDXID === 'SPDXRef-RootPackage')?.licenseDeclared, 'Apache-2.0')
   assert.match(await readFile(join(temporary, 'LICENSE'), 'utf8'), /Apache License\s+Version 2\.0/u)
   const version = JSON.parse((await execFileAsync(process.execPath, [runtime, '--version', '--json'], { maxBuffer: 64 * 1024 })).stdout)
-  assert.deepEqual(version, { schemaVersion: 'openadam.developer-kit-version.v0.1', status: 'ok', version: '0.1.4' })
+  assert.deepEqual(version, { schemaVersion: 'openadam.developer-kit-version.v0.1', status: 'ok', version: '0.1.5' })
   const materialSchema = JSON.parse((await execFileAsync(process.execPath, [runtime, 'materials', 'schema', '--json'], { maxBuffer: 64 * 1024 })).stdout)
   const opportunitySchema = JSON.parse((await execFileAsync(process.execPath, [runtime, 'opportunity', 'schema', '--json'], { maxBuffer: 64 * 1024 })).stdout)
   assert.equal(materialSchema.$id, 'urn:openadam:schema:authorized-material-set:v0.1')
@@ -62,6 +62,7 @@ try {
     '.codex-plugin/plugin.json',
     'skills/build-openadam-agent-tools/SKILL.md',
     'LICENSE',
+    'CHANGELOG.md',
   ]) assert.equal(names.has(required), true, `npm pack omitted ${required}`)
   process.stdout.write(`PASS developer distribution · ${first.component.files} component files · ${pack[0].entryCount} npm entries\n`)
 } finally {

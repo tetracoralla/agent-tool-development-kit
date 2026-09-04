@@ -20,7 +20,11 @@ discovery pass from the current product model and visible commands.
   field, absolute-path, parent-path, URI, symlink, special-file, and oversized
   declarations.
 - Verify project commands execute without a shell and that cancellation or
-  timeout terminates the complete child tree and releases admission.
+  timeout terminates the complete Kit-owned process scope and releases
+  admission. On POSIX, exercise a same-group descendant and separately verify
+  that output never promotes group absence into a claim about a Provider that
+  daemonizes or creates another session/process group in violation of probe
+  mode.
 - Exercise init and pack collision, exact replacement authority, staging
   cleanup, dry-run parity, interrupted publication, and rollback. No ordinary
   failure may hide a created or replaced artifact.
@@ -112,6 +116,30 @@ discovery pass from the current product model and visible commands.
   The Kit's own deadline must not be inferred from that remote numeric code;
   API and CLI must return a separate bounded runtime-connect failure, perform
   the same cleanup, and recover after repair.
+- Make `tools/list` and `tools/call` independently reject with Provider
+  JSON-RPC `-32001`, then independently terminate the transport. Probe and
+  measure must return their stage-specific stable catalog/call errors, expose
+  only a bounded numeric `protocolCode`, persist the failed observation, remove
+  the extracted runtime, and recover on the next successful run. None may be
+  reported as caller cancellation or the Kit deadline.
+- Give a silent Provider a 100 ms public probe and measure deadline while its
+  declared per-request timeout is materially larger. The same deadline must
+  interrupt catalog/call work and any concurrent batch, bound closeout and
+  failure persistence, and allow a subsequent repaired run. Race caller
+  cancellation against that deadline in both orders and retain the first
+  Kit-owned cause.
+- Make a Provider answer initialize and catalog, then withhold `tools/call`,
+  ignore stdio EOF and TERM, and keep one same-process-group descendant alive.
+  Cancel and deadline both probe and measure. At API return, the Provider and
+  same-group descendant must both be absent, the failed observation must record
+  confirmed process-scope termination before temporary-runtime cleanup, and the
+  repaired next run must succeed. Verify the record names the POSIX process
+  group or Windows captured tree and says work outside that scope is not
+  observable. Force an unconfirmed scope or unsettled pending operation and
+  verify the extracted runtime is retained with `cleanup: incomplete`, not
+  removed under possible live work. Exercise the POSIX process-group route on
+  current POSIX CI; exercise the Windows tree-snapshot and `taskkill /T /F`
+  route on a real Windows runner before claiming Windows runtime support.
 - Pre-cancel check, pack, public probe, public measure, and the direct MCP
   connection. They must run no project command or Host preview, construct no
   transport, spawn no Provider, publish no artifact, and create no observation.

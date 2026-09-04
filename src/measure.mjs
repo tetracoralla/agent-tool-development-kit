@@ -14,8 +14,14 @@ import {
   openMcpProbeSession,
   requireReadOnlyProbeTool,
   runMcpRequest,
-  throwIfRuntimeCancelled,
 } from './probe.mjs'
+import {
+  cleanupRuntimeAfterCloseout,
+  cleanupRuntimeRoot,
+  createRuntimeBudget,
+  runRuntimeCloseout,
+  runtimeCloseoutStatus,
+} from './runtime-budget.mjs'
 
 const execFileAsync = promisify(execFile)
 const WARMUP_CALLS = 3
@@ -49,10 +55,10 @@ function serializedBytes(value) {
   return bytes
 }
 
-async function persistMeasurementResult(observationRoot, result) {
+async function persistMeasurementResult(observationRoot, result, { signal } = {}) {
   await mkdir(observationRoot, { recursive: true })
   try {
-    await writeFile(join(observationRoot, 'result.json'), `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 })
+    await writeFile(join(observationRoot, 'result.json'), `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600, signal })
   } catch (error) {
     // Remove only a still-empty directory. A partially or previously written
     // observation remains available for recovery and diagnosis.
@@ -61,38 +67,58 @@ async function persistMeasurementResult(observationRoot, result) {
   }
 }
 
-async function providerRss(pid) {
+async function persistMeasurementCloseout(observationRoot, result, budget) {
+  return runRuntimeCloseout(
+    (signal) => persistMeasurementResult(observationRoot, result, { signal }),
+    budget.closeoutStepBudgetMs,
+  )
+}
+
+async function providerRss(pid, budget) {
   if (!Number.isSafeInteger(pid) || pid <= 0) return { status: 'unavailable', reason: 'provider-pid-unavailable' }
   try {
-    const { stdout } = await execFileAsync('/bin/ps', ['-o', 'rss=', '-p', String(pid)], { timeout: 2000, maxBuffer: 4096 })
+    budget?.throwIfStopped()
+    const { stdout } = await execFileAsync('/bin/ps', ['-o', 'rss=', '-p', String(pid)], {
+      timeout: Math.max(1, Math.min(2000, budget?.remainingMs() ?? 2000)),
+      maxBuffer: 4096,
+      signal: budget?.signal,
+    })
+    budget?.throwIfStopped()
     const kibibytes = Number(stdout.trim())
     if (!Number.isFinite(kibibytes) || kibibytes < 0) return { status: 'unavailable', reason: 'provider-rss-invalid' }
     return { status: 'observed', bytes: kibibytes * 1024, scope: 'direct-provider-process-only' }
-  } catch {
+  } catch (error) {
+    if (budget?.cause() !== null) throw budget.error()
     return { status: 'unavailable', reason: 'provider-rss-observation-failed' }
   }
 }
 
-async function successCall(session, probe, signal) {
+async function successCall(session, probe, { budget, signal } = {}) {
   const started = performance.now()
   const result = await runMcpRequest(
     () => session.client.callTool({ name: probe.tool, arguments: probe.arguments }, undefined, {
       timeout: session.integration.runtime.timeoutMs,
       maxTotalTimeout: session.integration.runtime.timeoutMs,
     }),
-    { signal, cancellationCode: 'MEASURE_CANCELLED' },
+    {
+      budget,
+      signal,
+      cancellationCode: 'MEASURE_CANCELLED',
+      failureCode: 'MEASURE_RUNTIME_CALL_FAILED',
+      failureMessage: 'The packed runtime failed or rejected the measured MCP tool call.',
+    },
   )
   if (result.isError === true) throw new DeveloperKitError('MEASURE_PROBE_ERROR', 'The declared success probe returned a tool error during measurement.')
   const bytes = serializedBytes(result)
   return { durationMs: rounded(performance.now() - started), resultBytes: bytes }
 }
 
-async function contextCost(root, project, session) {
+async function contextCost(root, project, session, budget) {
   const toolBytes = session.listing.tools.map((tool) => Buffer.byteLength(JSON.stringify(tool)))
   const skillFiles = []
   for (const carrier of project.carriers.filter((item) => item.kind === 'skill')) {
-    const path = await resolveDeclaredFile(root, carrier.path, 'Skill carrier')
-    const info = await stat(path)
+    const path = await budget.run(() => resolveDeclaredFile(root, carrier.path, 'Skill carrier'))
+    const info = await budget.run(() => stat(path))
     skillFiles.push({ path: carrier.path, bytes: info.size })
   }
   return {
@@ -124,81 +150,94 @@ export async function measureProject(rootInput, {
   signal,
 } = {}) {
   const overallStarted = performance.now()
-  throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
-  const root = await requireDirectory(rootInput)
-  const loaded = await loadProject(root, declaredPath)
-  if (loaded.project.package === undefined) throw new DeveloperKitError('PACKAGE_NOT_DECLARED', 'The project does not declare a packaged Agent tool.')
-  const probe = loaded.project.package.probes.find((item) => item.expectation === 'success')
-  if (probe === undefined) throw new DeveloperKitError('MEASURE_SUCCESS_PROBE_REQUIRED', 'Performance measurement requires one declared read-only success probe.')
-  const artifact = await resolveDeclaredFile(root, loaded.project.package.artifact, 'package artifact')
-  const integration = await readBoundedJson(join(root, ...loaded.project.package.integration.replaceAll('\\', '/').split('/')), 'Agent Host integration')
-  const observationRoot = join(root, '.verify', 'openadam-dev', `${timestamp()}-measure`)
-  throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
-  const temporaryRoot = await mkdtemp(join(tmpdir(), 'oadm-'))
-  const extractedRoot = join(temporaryRoot, 'component')
-  const workspaceRoot = join(temporaryRoot, 'workspace')
-  await mkdir(extractedRoot)
-  await mkdir(workspaceRoot)
+  const budget = createRuntimeBudget({
+    deadlineMs,
+    signal,
+    cancellationCode: 'MEASURE_CANCELLED',
+    deadlineCode: 'MEASURE_DEADLINE_EXCEEDED',
+  })
+  let root
+  let loaded
+  let observationRoot
+  let temporaryRoot
   try {
-    throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
-    await extractArchive(artifact, extractedRoot)
-    const descriptor = await readBoundedJson(join(extractedRoot, 'component.json'), 'component descriptor')
+    budget.throwIfStopped()
+    root = await budget.run(() => requireDirectory(rootInput))
+    loaded = await budget.run(() => loadProject(root, declaredPath))
+    if (loaded.project.package === undefined) throw new DeveloperKitError('PACKAGE_NOT_DECLARED', 'The project does not declare a packaged Agent tool.')
+    const probe = loaded.project.package.probes.find((item) => item.expectation === 'success')
+    if (probe === undefined) throw new DeveloperKitError('MEASURE_SUCCESS_PROBE_REQUIRED', 'Performance measurement requires one declared read-only success probe.')
+    const artifact = await budget.run(() => resolveDeclaredFile(root, loaded.project.package.artifact, 'package artifact'))
+    const integration = await budget.run(() => readBoundedJson(join(root, ...loaded.project.package.integration.replaceAll('\\', '/').split('/')), 'Agent Host integration'))
+    observationRoot = join(root, '.verify', 'openadam-dev', `${timestamp()}-measure`)
+    budget.throwIfStopped()
+    temporaryRoot = await budget.run(() => mkdtemp(join(tmpdir(), 'oadm-')))
+    const extractedRoot = join(temporaryRoot, 'component')
+    const workspaceRoot = join(temporaryRoot, 'workspace')
+    await budget.run(() => Promise.all([mkdir(extractedRoot), mkdir(workspaceRoot)]))
+    await budget.run(() => extractArchive(artifact, extractedRoot, { signal: budget.signal }))
+    const descriptor = await budget.run(() => readBoundedJson(join(extractedRoot, 'component.json'), 'component descriptor'))
     validateArtifact(loaded.project, descriptor, integration)
 
     const coldHome = join(temporaryRoot, 'cold-home')
-    await mkdir(coldHome)
-    throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
+    await budget.run(() => mkdir(coldHome))
+    budget.throwIfStopped()
     const coldStarted = performance.now()
     const cold = await openMcpProbeSession({
       extractedRoot,
       descriptor,
       workspaceRoot,
       home: coldHome,
-      signal,
+      budget,
       connectTimeoutCode: 'MEASURE_RUNTIME_CONNECT_TIMEOUT',
       connectFailureCode: 'MEASURE_RUNTIME_CONNECT_FAILED',
       connectCancellationCode: 'MEASURE_CANCELLED',
+      catalogFailureCode: 'MEASURE_RUNTIME_CATALOG_FAILED',
+      terminationFailureCode: 'MEASURE_RUNTIME_TERMINATION_FAILED',
     })
     let coldCall
     let coldRss
     try {
       requireReadOnlyProbeTool(cold, probe)
       const readyMs = rounded(performance.now() - coldStarted)
-      coldCall = await successCall(cold, probe, signal)
-      coldRss = await providerRss(cold.transport.pid)
+      coldCall = await successCall(cold, probe, { budget })
+      coldRss = await providerRss(cold.transport.pid, budget)
       coldCall = { readyMs, ...coldCall, totalMs: rounded(performance.now() - coldStarted) }
     } finally {
-      await cold.close().catch(() => {})
+      await cold.close()
     }
 
     const warmHome = join(temporaryRoot, 'warm-home')
-    await mkdir(warmHome)
-    throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
+    await budget.run(() => mkdir(warmHome))
+    budget.throwIfStopped()
     const warm = await openMcpProbeSession({
       extractedRoot,
       descriptor,
       workspaceRoot,
       home: warmHome,
-      signal,
+      budget,
       connectTimeoutCode: 'MEASURE_RUNTIME_CONNECT_TIMEOUT',
       connectFailureCode: 'MEASURE_RUNTIME_CONNECT_FAILED',
       connectCancellationCode: 'MEASURE_CANCELLED',
+      catalogFailureCode: 'MEASURE_RUNTIME_CATALOG_FAILED',
+      terminationFailureCode: 'MEASURE_RUNTIME_TERMINATION_FAILED',
     })
     let measurement
     try {
       requireReadOnlyProbeTool(warm, probe)
-      throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
-      const context = await contextCost(root, loaded.project, warm)
-      for (let index = 0; index < WARMUP_CALLS; index += 1) await successCall(warm, probe, signal)
-      const rssBefore = await providerRss(warm.transport.pid)
+      budget.throwIfStopped()
+      const context = await contextCost(root, loaded.project, warm, budget)
+      for (let index = 0; index < WARMUP_CALLS; index += 1) await successCall(warm, probe, { budget })
+      const rssBefore = await providerRss(warm.transport.pid, budget)
       const warmDurations = []
-      for (let index = 0; index < iterations; index += 1) warmDurations.push((await successCall(warm, probe, signal)).durationMs)
+      for (let index = 0; index < iterations; index += 1) warmDurations.push((await successCall(warm, probe, { budget })).durationMs)
 
       const sustainedStarted = performance.now()
       const sustainedDurations = []
       for (let offset = 0; offset < iterations; offset += concurrency) {
         const width = Math.min(concurrency, iterations - offset)
-        const results = await Promise.all(Array.from({ length: width }, () => successCall(warm, probe, signal)))
+        budget.throwIfStopped()
+        const results = await budget.run(() => Promise.all(Array.from({ length: width }, () => successCall(warm, probe, { budget }))))
         sustainedDurations.push(...results.map((item) => item.durationMs))
       }
       const sustainedMs = performance.now() - sustainedStarted
@@ -207,13 +246,13 @@ export async function measureProject(rootInput, {
       cancelled.abort()
       let cancellationObserved = false
       try {
-        await successCall(warm, probe, cancelled.signal)
+        await successCall(warm, probe, { signal: cancelled.signal })
       } catch {
         cancellationObserved = true
       }
-      const recovery = await successCall(warm, probe, signal)
-      throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
-      const rssAfter = await providerRss(warm.transport.pid)
+      const recovery = await successCall(warm, probe, { budget })
+      budget.throwIfStopped()
+      const rssAfter = await providerRss(warm.transport.pid, budget)
       const resource = {
         cold: coldRss,
         warmBefore: rssBefore,
@@ -242,10 +281,11 @@ export async function measureProject(rootInput, {
         providerStderrBytes: warm.stderrBytes(),
       }
     } finally {
-      await warm.close().catch(() => {})
+      await warm.close()
     }
-    throwIfRuntimeCancelled(signal, 'MEASURE_CANCELLED')
-    if (performance.now() - overallStarted > deadlineMs) throw new DeveloperKitError('MEASURE_DEADLINE_EXCEEDED', 'The measurement completed after its declared deadline.')
+    budget.throwIfStopped()
+    await budget.run(() => rm(temporaryRoot, { recursive: true, force: true }))
+    temporaryRoot = undefined
     const result = {
       schemaVersion: 'openadam.developer-kit-measurement.v0.1',
       status: 'ok',
@@ -262,12 +302,48 @@ export async function measureProject(rootInput, {
       environment: { credentialsInherited: false, workspace: 'temporary-empty', processSandbox: 'not-enforced' },
       observationDirectory: relative(root, observationRoot),
       durationMs: rounded(performance.now() - overallStarted),
+      deadline: {
+        requestedMs: deadlineMs,
+        closeoutBudgetMs: budget.closeoutBudgetMs,
+        closeoutScope: ['pending-operations', 'provider-process-scope', 'temporary-cleanup', 'failure-observation'],
+      },
       cleanup: 'completed',
     }
-    await persistMeasurementResult(observationRoot, result)
+    await budget.run(() => persistMeasurementResult(observationRoot, result, { signal: budget.signal }))
     return result
-  } catch (error) {
+  } catch (caught) {
+    let error = budget.cause() === null ? caught : budget.error()
     if (error instanceof DeveloperKitError) {
+      if (root === undefined || loaded === undefined || observationRoot === undefined) throw error
+      const pendingOperations = await budget.drainPending()
+      const runtimeTermination = budget.runtimeTermination()
+      const temporaryRuntime = await cleanupRuntimeAfterCloseout({
+        pendingOperations,
+        runtimeTermination,
+        temporaryRoot,
+        stepBudgetMs: budget.closeoutStepBudgetMs,
+      })
+      temporaryRoot = undefined
+      const cleanup = runtimeCloseoutStatus(pendingOperations, temporaryRuntime, runtimeTermination)
+      if (runtimeTermination.status === 'unconfirmed') {
+        error = new DeveloperKitError(
+          'MEASURE_RUNTIME_TERMINATION_FAILED',
+          'The Developer Kit could not confirm termination of the packed Provider process scope.',
+          { runtimeTermination },
+        )
+      } else if (cleanup !== 'completed') {
+        error = new DeveloperKitError(
+          'MEASURE_RUNTIME_CLEANUP_FAILED',
+          'The Developer Kit could not complete bounded runtime cleanup.',
+          {
+            pendingOperations,
+            temporaryRuntime,
+            priorCode: caught instanceof DeveloperKitError ? caught.code : null,
+          },
+        )
+      } else {
+        error = budget.cause() === null ? caught : budget.error()
+      }
       const observationDirectory = relative(root, observationRoot)
       const result = {
         schemaVersion: 'openadam.developer-kit-measurement.v0.1',
@@ -275,17 +351,39 @@ export async function measureProject(rootInput, {
         project: { id: loaded.project.id, version: loaded.project.version },
         error: publicError(error),
         observationDirectory,
-        cleanup: 'completed',
+        deadline: {
+          requestedMs: deadlineMs,
+          closeoutBudgetMs: budget.closeoutBudgetMs,
+          closeoutScope: ['pending-operations', 'provider-process-scope', 'temporary-cleanup', 'failure-observation'],
+        },
+        closeout: {
+          pendingOperations,
+          runtimeTermination,
+          temporaryRuntime,
+          failureObservation: 'this-record',
+          effects: {
+            kitOwnedExternalStateMutation: 'none',
+            providerEffects: 'not-established',
+            providerProcessScope: runtimeTermination.status,
+          },
+        },
+        cleanup,
       }
-      await persistMeasurementResult(observationRoot, result)
+      let observationPersisted = false
+      try {
+        await persistMeasurementCloseout(observationRoot, result, budget)
+        observationPersisted = true
+      } catch {}
       error.details = {
         ...(error.details !== null && typeof error.details === 'object' ? error.details : {}),
-        observationDirectory,
+        ...(observationPersisted ? { observationDirectory } : { observationPersistence: 'failed' }),
       }
+      error.cleanup = cleanup
     }
     throw error
   } finally {
-    await rm(temporaryRoot, { recursive: true, force: true }).catch(() => {})
+    if (temporaryRoot !== undefined) await cleanupRuntimeRoot(temporaryRoot, budget.closeoutStepBudgetMs)
+    budget.close()
   }
 }
 
@@ -300,7 +398,7 @@ export async function safeMeasureProject(...args) {
       status: 'error',
       error: publicError(error),
       ...(typeof observationDirectory === 'string' ? { observationDirectory } : {}),
-      cleanup: 'completed-or-not-required',
+      cleanup: error.cleanup ?? 'not-established',
     }
   }
 }

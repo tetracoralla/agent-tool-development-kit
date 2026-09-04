@@ -188,6 +188,26 @@ cancellation/recovery, direct-provider RSS, and Agent-context byte baselines.
 It does not reuse source entrypoints, start a model, or promote an unowned
 threshold into a gate.
 
+Probe and measure use one cumulative Kit-owned deadline beginning at public
+operation entry. It covers Host preview, extraction, MCP connection and catalog,
+all direct calls and concurrent batches, and successful result persistence.
+Provider/SDK/transport catalog and call failures are normalized by stage with a
+bounded numeric protocol code; caller cancellation, Kit deadline expiry, and OS
+transport termination remain separate. The Kit owns the spawned stdio Provider
+lifecycle rather than relying on SDK-private process state. POSIX uses one
+isolated process group with bounded EOF, group TERM, group KILL, and group
+absence confirmation. A Provider in probe mode must remain in that group; a
+daemonized or new-session child violates the project contract, is outside the
+Kit's observable scope, and is not covered by `cleanup: completed`. Windows uses
+a bounded captured process tree with `taskkill /T`, forced termination, and PID
+absence checks.
+Deadline/cancellation closeout has a separately disclosed 4.2-second maximum
+for pending-operation settlement (including bounded transport shutdown),
+temporary cleanup, and one failure observation. If pending work is unsettled or
+the owned process scope is unconfirmed, the temporary runtime is retained and
+cleanup stays incomplete. Windows source support does not substitute for a
+current Windows runtime observation.
+
 ### Continue after interruption
 
 The Agent reacquires the branch, dirty state, current project declaration, CLI
@@ -238,7 +258,7 @@ owns installation and current host state. Capability and Procedure repositories
 own portable semantics. Provider repositories own domain implementation.
 
 Pack and probe execute developer-authored provider code. Environment isolation,
-staging, timeouts, output limits, process-tree cancellation, read-only catalog
+staging, timeouts, output limits, owned-process-scope cancellation, read-only catalog
 annotations, and cleanup reduce accidental exposure, but there is no OS process
 or network sandbox. A repository should run only probes whose effects it can
 honestly constrain.

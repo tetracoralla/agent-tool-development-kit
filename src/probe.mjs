@@ -6,7 +6,6 @@ import { performance } from 'node:perf_hooks'
 import { createGunzip } from 'node:zlib'
 import { pipeline } from 'node:stream/promises'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
-import { StdioClientTransport } from '@modelcontextprotocol/sdk/client/stdio.js'
 import tarStream from 'tar-stream'
 import {
   DEFAULT_CHECK_DEADLINE_MS,
@@ -19,8 +18,17 @@ import { loadProject } from './contracts.mjs'
 import { locateAgentHost } from './doctor.mjs'
 import { DeveloperKitError, publicError } from './errors.mjs'
 import { readBoundedJson } from './json.mjs'
+import { OwnedMcpStdioTransport } from './owned-mcp-stdio-transport.mjs'
 import { resolveDeclaredFile, requireDirectory } from './paths.mjs'
 import { runProjectCommand } from './runner.mjs'
+import {
+  cleanupRuntimeAfterCloseout,
+  cleanupRuntimeRoot,
+  createRuntimeBudget,
+  runRuntimeCloseout,
+  runtimeCancellationError,
+  runtimeCloseoutStatus,
+} from './runtime-budget.mjs'
 
 function timestamp() {
   return new Date().toISOString().replaceAll(':', '').replaceAll('.', '-')
@@ -39,13 +47,14 @@ function safeArchivePath(raw) {
   return value
 }
 
-export async function extractArchive(archive, destination) {
+export async function extractArchive(archive, destination, { signal } = {}) {
   const extract = tarStream.extract()
   const paths = new Set()
   let files = 0
   let bytes = 0
   extract.on('entry', (header, stream, next) => {
     const handle = async () => {
+      signal?.throwIfAborted()
       if (/^\.\/?$/u.test(header.name) && header.type === 'directory') {
         stream.resume()
         await new Promise((resolveStream, reject) => stream.once('end', resolveStream).once('error', reject))
@@ -74,12 +83,16 @@ export async function extractArchive(archive, destination) {
         throw new DeveloperKitError('PROBE_ARCHIVE_LIMIT_EXCEEDED', 'The component archive exceeds the probe extraction limits.')
       }
       await mkdir(dirname(target), { recursive: true })
-      await pipeline(stream, createWriteStream(target, { flags: 'wx', mode: header.mode & 0o111 ? 0o755 : 0o644 }))
+      await pipeline(
+        stream,
+        createWriteStream(target, { flags: 'wx', mode: header.mode & 0o111 ? 0o755 : 0o644 }),
+        { signal },
+      )
       await chmod(target, header.mode & 0o111 ? 0o755 : 0o644)
     }
     handle().then(next, (error) => extract.destroy(error))
   })
-  await pipeline(createReadStream(archive), createGunzip(), extract)
+  await pipeline(createReadStream(archive), createGunzip(), extract, { signal })
   if (!paths.has('component.json')) throw new DeveloperKitError('PROBE_DESCRIPTOR_MISSING', 'The component archive does not contain component.json.')
   return { files, expandedBytes: bytes }
 }
@@ -107,8 +120,11 @@ function parseHostJson(commandResult) {
   return value
 }
 
-async function defaultHostPreview({ artifact, spdx, workspaceRoot, logDirectory, signal, remainingMs }) {
-  const located = await locateAgentHost()
+async function defaultHostPreview({ artifact, spdx, workspaceRoot, logDirectory, signal, budget, remainingMs }) {
+  const stopSignal = budget?.signal ?? signal
+  const located = await locateAgentHost({ signal: stopSignal, timeout: Math.max(1, Math.min(remainingMs + 50, 3000)) })
+  if (budget === undefined) throwIfRuntimeCancelled(signal, 'PROBE_CANCELLED')
+  else budget.throwIfStopped()
   if (!located.available || located.executable === null) {
     throw new DeveloperKitError('AGENT_HOST_UNAVAILABLE', 'Install the current Agent Host to validate the packaged component boundary.')
   }
@@ -116,15 +132,17 @@ async function defaultHostPreview({ artifact, spdx, workspaceRoot, logDirectory,
     'component', 'preview', '--artifact', artifact, '--license-spdx', spdx,
     '--workspace-root', workspaceRoot, '--standalone', '--json',
   ]
+  const hostCommandLimitMs = Math.min(remainingMs + 50, 120_000)
   const command = await runProjectCommand({
-    command: { executable: located.executable, args, timeoutMs: Math.min(remainingMs, 120_000) },
+    command: { executable: located.executable, args, timeoutMs: hostCommandLimitMs },
     cwd: workspaceRoot,
     logDirectory,
-    signal,
-    remainingMs,
+    signal: stopSignal,
+    remainingMs: hostCommandLimitMs,
     includeOutput: true,
   })
-  throwIfRuntimeCancelled(signal, 'PROBE_CANCELLED')
+  if (budget === undefined) throwIfRuntimeCancelled(signal, 'PROBE_CANCELLED')
+  else budget.throwIfStopped()
   const preview = parseHostJson(command)
   return {
     source: located.source,
@@ -158,34 +176,47 @@ function resultBytes(value) {
   return bytes
 }
 
-async function persistProbeResult(observationRoot, result) {
+async function persistProbeResult(observationRoot, result, { signal } = {}) {
   await mkdir(observationRoot, { recursive: true })
   try {
-    await writeFile(join(observationRoot, 'result.json'), `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600 })
+    await writeFile(join(observationRoot, 'result.json'), `${JSON.stringify(result, null, 2)}\n`, { mode: 0o600, signal })
   } catch (error) {
     await rmdir(observationRoot).catch(() => {})
     throw error
   }
 }
 
-async function waitForTransportClose(closed) {
-  let timer
-  const timeout = new Promise((resolveTimeout) => {
-    timer = setTimeout(resolveTimeout, 5000)
-    timer.unref?.()
-  })
+async function closeMcpClient(client, transport, budget, failureCode) {
+  let closeError
   try {
-    await Promise.race([closed, timeout])
+    // The SDK clears its transport reference as soon as Provider stdout closes.
+    // Close the Kit-owned transport directly so an already-exited root cannot
+    // make the SDK skip descendant/process-group cleanup.
+    await transport.close()
+    await client.close()
+  } catch (error) {
+    closeError = error
   } finally {
-    clearTimeout(timer)
+    budget?.recordRuntimeTermination(transport, transport.termination)
   }
+  if (!['confirmed', 'not-required'].includes(transport.termination.status) || closeError !== undefined) {
+    throw new DeveloperKitError(
+      failureCode,
+      'The Developer Kit could not confirm termination of the packed Provider process scope.',
+      { runtimeTermination: transport.termination },
+    )
+  }
+  return transport.termination
 }
 
-function runtimeCancellationError(code) {
-  return new DeveloperKitError(
-    code,
-    'The packed runtime operation was cancelled by its caller.',
-  )
+function boundedProtocolCode(error) {
+  return Number.isInteger(error?.code) && error.code >= -2_147_483_648 && error.code <= 2_147_483_647
+    ? error.code
+    : null
+}
+
+async function persistCloseoutResult(persist, observationRoot, result) {
+  return runRuntimeCloseout((signal) => persist(observationRoot, result, { signal }))
 }
 
 export function throwIfRuntimeCancelled(signal, code = 'PROBE_CANCELLED') {
@@ -193,11 +224,21 @@ export function throwIfRuntimeCancelled(signal, code = 'PROBE_CANCELLED') {
 }
 
 export async function runMcpRequest(operation, {
+  budget,
   signal,
   cancellationCode = 'PROBE_CANCELLED',
+  failureCode,
+  failureMessage,
+  passthroughProtocolCodes = [],
 } = {}) {
-  throwIfRuntimeCancelled(signal, cancellationCode)
-  if (signal === undefined) return operation()
+  try {
+    if (budget !== undefined) return await budget.run(operation)
+    throwIfRuntimeCancelled(signal, cancellationCode)
+    if (signal === undefined) return await operation()
+  } catch (error) {
+    if (error instanceof DeveloperKitError || failureCode === undefined || passthroughProtocolCodes.includes(error?.code)) throw error
+    throw new DeveloperKitError(failureCode, failureMessage, { protocolCode: boundedProtocolCode(error) })
+  }
   const localCancellation = Object.freeze({ kind: 'openadam-local-operation-cancellation' })
   let cancel
   const cancellation = new Promise((_, reject) => {
@@ -209,11 +250,12 @@ export async function runMcpRequest(operation, {
     throw runtimeCancellationError(cancellationCode)
   }
   try {
-    const request = operation()
+    const request = Promise.resolve().then(operation)
     return await Promise.race([request, cancellation])
   } catch (error) {
     if (error === localCancellation) throw runtimeCancellationError(cancellationCode)
-    throw error
+    if (error instanceof DeveloperKitError || failureCode === undefined || passthroughProtocolCodes.includes(error?.code)) throw error
+    throw new DeveloperKitError(failureCode, failureMessage, { protocolCode: boundedProtocolCode(error) })
   } finally {
     signal?.removeEventListener('abort', cancel)
   }
@@ -225,26 +267,34 @@ export async function openMcpProbeSession({
   workspaceRoot,
   home,
   signal,
+  budget,
   connectTimeoutCode = 'PROBE_RUNTIME_CONNECT_TIMEOUT',
   connectFailureCode = 'PROBE_RUNTIME_CONNECT_FAILED',
   connectCancellationCode = 'PROBE_CANCELLED',
+  catalogFailureCode = 'PROBE_RUNTIME_CATALOG_FAILED',
+  terminationFailureCode = 'PROBE_RUNTIME_TERMINATION_FAILED',
 }) {
   const cancellationError = () => runtimeCancellationError(connectCancellationCode)
-  throwIfRuntimeCancelled(signal, connectCancellationCode)
+  if (budget === undefined) throwIfRuntimeCancelled(signal, connectCancellationCode)
+  else budget.throwIfStopped()
   const integration = descriptor.integration
   const runtimeCommand = contained(extractedRoot, integration.runtime.command, 'runtime command')
   const runtimeCwd = contained(extractedRoot, integration.runtime.cwd, 'runtime working directory')
-  const commandInfo = await lstat(runtimeCommand)
+  const commandInfo = budget === undefined
+    ? await lstat(runtimeCommand)
+    : await budget.run(() => lstat(runtimeCommand))
   if (commandInfo.isSymbolicLink() || !commandInfo.isFile()) throw new DeveloperKitError('PROBE_RUNTIME_INVALID', 'The runtime command is not one real extracted file.')
   const environment = Object.fromEntries(['PATH', 'LANG', 'LC_ALL'].flatMap((name) => process.env[name] === undefined ? [] : [[name, process.env[name]]]))
   environment.HOME = home
   environment.TMPDIR = join(home, 'tmp')
   environment.OPENADAM_PROBE_MODE = '1'
   for (const name of integration.runtime.workspaceEnvironment ?? []) environment[name] = workspaceRoot
-  await mkdir(environment.TMPDIR, { recursive: true })
-  throwIfRuntimeCancelled(signal, connectCancellationCode)
+  if (budget === undefined) await mkdir(environment.TMPDIR, { recursive: true })
+  else await budget.run(() => mkdir(environment.TMPDIR, { recursive: true }))
+  if (budget === undefined) throwIfRuntimeCancelled(signal, connectCancellationCode)
+  else budget.throwIfStopped()
 
-  const transport = new StdioClientTransport({
+  const transport = new OwnedMcpStdioTransport({
     command: integration.runtime.executor === 'suite-node' ? process.execPath : runtimeCommand,
     args: integration.runtime.executor === 'suite-node' ? [runtimeCommand, ...integration.runtime.args] : integration.runtime.args,
     cwd: runtimeCwd,
@@ -252,11 +302,6 @@ export async function openMcpProbeSession({
     stderr: 'pipe',
     maxBufferSize: MAX_OUTPUT_BYTES,
   })
-  let resolveTransportClosed
-  const transportClosed = new Promise((resolveClosed) => {
-    resolveTransportClosed = resolveClosed
-  })
-  transport.onclose = resolveTransportClosed
   let stderrBytes = 0
   transport.stderr?.on('data', (chunk) => {
     stderrBytes += chunk.length
@@ -277,8 +322,9 @@ export async function openMcpProbeSession({
   const connectCancellation = new Promise((_, reject) => {
     cancelConnect = () => reject(localConnectCancellation)
   })
-  signal?.addEventListener('abort', cancelConnect, { once: true })
-  if (signal?.aborted) cancelConnect()
+  const stopSignal = budget?.signal ?? signal
+  stopSignal?.addEventListener('abort', cancelConnect, { once: true })
+  if (stopSignal?.aborted) cancelConnect()
   try {
     await Promise.race([
       client.connect(transport),
@@ -286,8 +332,12 @@ export async function openMcpProbeSession({
       connectCancellation,
     ])
   } catch (error) {
-    await client.close().catch(() => {})
-    await waitForTransportClose(transportClosed)
+    try {
+      await closeMcpClient(client, transport, budget, terminationFailureCode)
+    } catch (closeError) {
+      throw closeError
+    }
+    if (budget?.cause() !== null) throw budget.error()
     if (error === localConnectTimeout) {
       throw new DeveloperKitError(
         connectTimeoutCode,
@@ -295,20 +345,29 @@ export async function openMcpProbeSession({
         { timeoutMs: integration.runtime.timeoutMs },
       )
     }
-    if (error === localConnectCancellation) throw cancellationError()
+    if (error === localConnectCancellation) {
+      if (budget !== undefined) throw budget.error()
+      throw cancellationError()
+    }
     throw new DeveloperKitError(
       connectFailureCode,
       'The packed runtime failed or rejected MCP initialization.',
-      { protocolCode: Number.isSafeInteger(error?.code) ? error.code : null },
+      { protocolCode: boundedProtocolCode(error) },
     )
   } finally {
     clearTimeout(connectTimer)
-    signal?.removeEventListener('abort', cancelConnect)
+    stopSignal?.removeEventListener('abort', cancelConnect)
   }
   try {
     const listing = await runMcpRequest(
       () => client.listTools(undefined, { timeout: integration.runtime.timeoutMs, maxTotalTimeout: integration.runtime.timeoutMs }),
-      { signal, cancellationCode: connectCancellationCode },
+      {
+        budget,
+        signal,
+        cancellationCode: connectCancellationCode,
+        failureCode: catalogFailureCode,
+        failureMessage: 'The packed runtime failed or rejected MCP tool catalog discovery.',
+      },
     )
     const catalogBytes = resultBytes(listing.tools)
     const byName = new Map(listing.tools.map((tool) => [tool.name, tool]))
@@ -321,10 +380,14 @@ export async function openMcpProbeSession({
       byName,
       catalogBytes,
       stderrBytes: () => stderrBytes,
-      close: () => client.close(),
+      close: () => closeMcpClient(client, transport, budget, terminationFailureCode),
     }
   } catch (error) {
-    await client.close().catch(() => {})
+    try {
+      await closeMcpClient(client, transport, budget, terminationFailureCode)
+    } catch (closeError) {
+      throw closeError
+    }
     throw error
   }
 }
@@ -338,8 +401,8 @@ export function requireReadOnlyProbeTool(session, probe) {
   return tool
 }
 
-async function defaultMcpProbe({ extractedRoot, descriptor, probes, workspaceRoot, home, signal }) {
-  const session = await openMcpProbeSession({ extractedRoot, descriptor, workspaceRoot, home, signal })
+async function defaultMcpProbe({ extractedRoot, descriptor, probes, workspaceRoot, home, signal, budget }) {
+  const session = await openMcpProbeSession({ extractedRoot, descriptor, workspaceRoot, home, signal, budget })
   const { client, integration, byName } = session
   try {
     const results = []
@@ -355,13 +418,20 @@ async function defaultMcpProbe({ extractedRoot, descriptor, probes, workspaceRoo
             timeout: integration.runtime.timeoutMs,
             maxTotalTimeout: integration.runtime.timeoutMs,
           }),
-          { signal, cancellationCode: 'PROBE_CANCELLED' },
+          {
+            budget,
+            signal,
+            cancellationCode: 'PROBE_CANCELLED',
+            failureCode: 'PROBE_CALL_FAILED',
+            failureMessage: `Runtime probe ${probe.id} failed outside its declared result contract.`,
+            passthroughProtocolCodes: [-32602],
+          },
         )
         bytes = resultBytes(result)
         outcome = result.isError === true ? 'tool-error' : 'success'
       } catch (error) {
         if (error instanceof DeveloperKitError) throw error
-        if (error?.code !== -32602) throw new DeveloperKitError('PROBE_CALL_FAILED', `Runtime probe ${probe.id} failed outside its declared result contract.`, { protocolCode: error?.code ?? null })
+        if (error?.code !== -32602) throw error
         outcome = 'protocol-error'
         protocolCode = error.code
       }
@@ -375,8 +445,30 @@ async function defaultMcpProbe({ extractedRoot, descriptor, probes, workspaceRoo
       stderrBytes: session.stderrBytes(),
     }
   } finally {
-    await session.close().catch(() => {})
+    await session.close()
   }
+}
+
+function finalProbeError(caught, budget, closeout) {
+  if (closeout.runtimeTermination.status === 'unconfirmed') {
+    return new DeveloperKitError(
+      'PROBE_RUNTIME_TERMINATION_FAILED',
+      'The Developer Kit could not confirm termination of the packed Provider process scope.',
+      { runtimeTermination: closeout.runtimeTermination },
+    )
+  }
+  if (closeout.cleanup !== 'completed') {
+    return new DeveloperKitError(
+      'PROBE_RUNTIME_CLEANUP_FAILED',
+      'The Developer Kit could not complete bounded runtime cleanup.',
+      {
+        pendingOperations: closeout.pendingOperations,
+        temporaryRuntime: closeout.temporaryRuntime,
+        priorCode: caught instanceof DeveloperKitError ? caught.code : null,
+      },
+    )
+  }
+  return budget.cause() === null ? caught : budget.error()
 }
 
 function summarizedHost(value) {
@@ -399,40 +491,45 @@ export async function probeProject(rootInput, {
   deadlineMs = DEFAULT_CHECK_DEADLINE_MS,
   signal,
 } = {}, dependencies = {}) {
-  const started = performance.now()
-  throwIfRuntimeCancelled(signal, 'PROBE_CANCELLED')
-  const root = await requireDirectory(rootInput)
-  const loaded = await loadProject(root, declaredPath)
-  if (loaded.project.package === undefined) throw new DeveloperKitError('PACKAGE_NOT_DECLARED', 'The project does not declare a packaged Agent tool.')
-  const artifact = await resolveDeclaredFile(root, loaded.project.package.artifact, 'package artifact')
-  const integration = await readBoundedJson(join(root, ...loaded.project.package.integration.replaceAll('\\', '/').split('/')), 'Agent Host integration')
-  throwIfRuntimeCancelled(signal, 'PROBE_CANCELLED')
-  const observationRoot = join(root, '.verify', 'openadam-dev', `${timestamp()}-probe`)
-  await mkdir(observationRoot, { recursive: true })
+  const budget = createRuntimeBudget({
+    deadlineMs,
+    signal,
+    cancellationCode: 'PROBE_CANCELLED',
+    deadlineCode: 'PROBE_DEADLINE_EXCEEDED',
+  })
   let temporaryRoot
+  let root
+  let loaded
+  let observationRoot
   try {
-    throwIfRuntimeCancelled(signal, 'PROBE_CANCELLED')
-    temporaryRoot = await mkdtemp(join(tmpdir(), 'oadp-'))
+    budget.throwIfStopped()
+    root = await budget.run(() => requireDirectory(rootInput))
+    loaded = await budget.run(() => loadProject(root, declaredPath))
+    if (loaded.project.package === undefined) throw new DeveloperKitError('PACKAGE_NOT_DECLARED', 'The project does not declare a packaged Agent tool.')
+    const artifact = await budget.run(() => resolveDeclaredFile(root, loaded.project.package.artifact, 'package artifact'))
+    const integration = await budget.run(() => readBoundedJson(join(root, ...loaded.project.package.integration.replaceAll('\\', '/').split('/')), 'Agent Host integration'))
+    budget.throwIfStopped()
+    observationRoot = join(root, '.verify', 'openadam-dev', `${timestamp()}-probe`)
+    await budget.run(() => mkdir(observationRoot, { recursive: true }))
+    temporaryRoot = await budget.run(() => mkdtemp(join(tmpdir(), 'oadp-')))
     const extractedRoot = join(temporaryRoot, 'component')
     const workspaceRoot = join(temporaryRoot, 'workspace')
     const home = join(temporaryRoot, 'home')
-    await mkdir(extractedRoot)
-    await mkdir(workspaceRoot)
-    await mkdir(home)
-    throwIfRuntimeCancelled(signal, 'PROBE_CANCELLED')
-    const remainingMs = Math.floor(deadlineMs - (performance.now() - started))
-    if (remainingMs <= 0) throw new DeveloperKitError('PROBE_DEADLINE_EXCEEDED', 'The probe deadline expired before Agent Host preview.')
-    const host = await (dependencies.hostPreview ?? defaultHostPreview)({
+    await budget.run(() => Promise.all([mkdir(extractedRoot), mkdir(workspaceRoot), mkdir(home)]))
+    budget.throwIfStopped()
+    const remainingMs = budget.remainingMs()
+    const host = await budget.run(() => (dependencies.hostPreview ?? defaultHostPreview)({
       artifact,
       spdx: loaded.project.package.legal.spdx,
       workspaceRoot,
       logDirectory: join(observationRoot, 'agent-host-preview'),
-      signal,
+      signal: budget.signal,
+      budget,
       remainingMs,
-    })
-    throwIfRuntimeCancelled(signal, 'PROBE_CANCELLED')
-    const extraction = await extractArchive(artifact, extractedRoot)
-    const descriptor = await readBoundedJson(join(extractedRoot, 'component.json'), 'component descriptor')
+    }))
+    budget.throwIfStopped()
+    const extraction = await budget.run(() => extractArchive(artifact, extractedRoot, { signal: budget.signal }))
+    const descriptor = await budget.run(() => readBoundedJson(join(extractedRoot, 'component.json'), 'component descriptor'))
     if (descriptor?.id !== loaded.project.package.componentId || descriptor?.version !== loaded.project.version
       || JSON.stringify(descriptor?.integration) !== JSON.stringify(integration)) {
       throw new DeveloperKitError('PROBE_PROJECT_ARTIFACT_DRIFT', 'The packaged component identity or integration differs from the current project declaration.')
@@ -440,15 +537,18 @@ export async function probeProject(rootInput, {
     if (host.preview.binding?.id !== descriptor.id || host.preview.binding?.version !== descriptor.version) {
       throw new DeveloperKitError('AGENT_HOST_RESULT_INVALID', 'Agent Host preview identity differs from the extracted component.')
     }
-    throwIfRuntimeCancelled(signal, 'PROBE_CANCELLED')
-    const direct = await (dependencies.mcpProbe ?? defaultMcpProbe)({
+    budget.throwIfStopped()
+    const direct = await budget.run(() => (dependencies.mcpProbe ?? defaultMcpProbe)({
       extractedRoot,
       descriptor,
       probes: loaded.project.package.probes,
       workspaceRoot,
       home,
-      signal,
-    })
+      signal: budget.signal,
+      budget,
+    }))
+    await budget.run(() => rm(temporaryRoot, { recursive: true, force: true }))
+    temporaryRoot = undefined
     const result = {
       schemaVersion: 'openadam.developer-kit-probe.v0.1',
       status: direct.status,
@@ -465,13 +565,30 @@ export async function probeProject(rootInput, {
         workspace: 'temporary-empty',
         processSandbox: 'not-enforced',
       },
+      deadline: {
+        requestedMs: deadlineMs,
+        closeoutBudgetMs: budget.closeoutBudgetMs,
+        closeoutScope: ['pending-operations', 'provider-process-scope', 'temporary-cleanup', 'failure-observation'],
+      },
       cleanup: 'completed',
     }
-    throwIfRuntimeCancelled(signal, 'PROBE_CANCELLED')
-    await persistProbeResult(observationRoot, result)
+    budget.throwIfStopped()
+    await budget.run(() => persistProbeResult(observationRoot, result, { signal: budget.signal }))
     return result
-  } catch (error) {
+  } catch (caught) {
+    let error = budget.cause() === null ? caught : budget.error()
     if (error instanceof DeveloperKitError) {
+      if (root === undefined || loaded === undefined || observationRoot === undefined) throw error
+      const pendingOperations = await budget.drainPending()
+      const runtimeTermination = budget.runtimeTermination()
+      const temporaryRuntime = await cleanupRuntimeAfterCloseout({
+        pendingOperations,
+        runtimeTermination,
+        temporaryRoot,
+      })
+      temporaryRoot = undefined
+      const cleanup = runtimeCloseoutStatus(pendingOperations, temporaryRuntime, runtimeTermination)
+      error = finalProbeError(caught, budget, { pendingOperations, runtimeTermination, temporaryRuntime, cleanup })
       const observationDirectory = relative(root, observationRoot)
       const result = {
         schemaVersion: 'openadam.developer-kit-probe.v0.1',
@@ -479,19 +596,41 @@ export async function probeProject(rootInput, {
         project: { id: loaded.project.id, version: loaded.project.version },
         error: publicError(error),
         observationDirectory,
-        cleanup: 'completed',
+        deadline: {
+          requestedMs: deadlineMs,
+          closeoutBudgetMs: budget.closeoutBudgetMs,
+          closeoutScope: ['pending-operations', 'provider-process-scope', 'temporary-cleanup', 'failure-observation'],
+        },
+        closeout: {
+          pendingOperations,
+          runtimeTermination,
+          temporaryRuntime,
+          failureObservation: 'this-record',
+          effects: {
+            kitOwnedExternalStateMutation: 'none',
+            providerEffects: 'not-established',
+            providerProcessScope: runtimeTermination.status,
+          },
+        },
+        cleanup,
       }
-      await persistProbeResult(observationRoot, result)
+      let observationPersisted = false
+      try {
+        await persistCloseoutResult(persistProbeResult, observationRoot, result)
+        observationPersisted = true
+      } catch {}
       error.details = {
         ...(error.details !== null && typeof error.details === 'object' ? error.details : {}),
-        observationDirectory,
+        ...(observationPersisted ? { observationDirectory } : { observationPersistence: 'failed' }),
       }
-    } else {
+      error.cleanup = cleanup
+    } else if (observationRoot !== undefined) {
       await rmdir(observationRoot).catch(() => {})
     }
     throw error
   } finally {
-    if (temporaryRoot !== undefined) await rm(temporaryRoot, { recursive: true, force: true }).catch(() => {})
+    if (temporaryRoot !== undefined) await cleanupRuntimeRoot(temporaryRoot)
+    budget.close()
   }
 }
 
@@ -506,7 +645,7 @@ export async function safeProbeProject(...args) {
       status: 'error',
       error: publicError(error),
       ...(typeof observationDirectory === 'string' ? { observationDirectory } : {}),
-      cleanup: 'completed-or-not-required',
+      cleanup: error.cleanup ?? 'not-established',
     }
   }
 }

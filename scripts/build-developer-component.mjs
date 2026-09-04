@@ -234,6 +234,7 @@ export async function buildDeveloperComponent({ outputPath = DEFAULT_OUTPUT, rep
     })
     await cp(join(repositoryRoot, 'LICENSE'), join(componentRoot, 'LICENSE'), { force: false, errorOnExist: true })
     await cp(join(repositoryRoot, 'NOTICE'), join(componentRoot, 'NOTICE'), { force: false, errorOnExist: true })
+    await cp(join(repositoryRoot, 'CHANGELOG.md'), join(componentRoot, 'CHANGELOG.md'), { force: false, errorOnExist: true })
     const dependencies = await bundledDependencyNotices(componentRoot, bundled.metafile)
     await writeJson(join(componentRoot, 'sbom.spdx.json'), sbom(dependencies))
     const developerIntegration = integration()
@@ -256,6 +257,7 @@ export async function buildDeveloperComponent({ outputPath = DEFAULT_OUTPUT, rep
       `${PLUGIN_ROOT}/skills/${SKILL_ID}/references/opportunity-discovery.md`,
       `${PLUGIN_ROOT}/skills/${SKILL_ID}/assets/OPPORTUNITY_PROPOSAL.md`,
       ...Object.values(legal),
+      'CHANGELOG.md',
     ])].sort()
     const descriptor = {
       schemaVersion: 'openadam.agent-host-component.v0.1',

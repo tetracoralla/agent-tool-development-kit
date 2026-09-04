@@ -61,8 +61,11 @@ The first version records only facts with current consumers:
 - direct package probes set `OPENADAM_PROBE_MODE=1` in their credential-free
   temporary process. A Provider may use that signal to remove an otherwise
   open-world route from the current probe behavior and catalog annotation, but
-  the flag is not a process or network sandbox; the live catalog must still
-  report closed read-only annotations before the Kit makes any call;
+  the flag is not a process or network sandbox. While it is set, the Provider
+  must not daemonize, create a new session/process group, reparent work outside
+  the Kit-owned process scope, or intentionally keep work alive after stdio
+  closure; the live catalog must still report closed read-only annotations
+  before the Kit makes any call;
 - exact component-relative legal files and an owner-supplied SPDX expression;
 - two to eight bounded read-only runtime probes, including at least one
   expected success and one expected tool or protocol error.
@@ -102,18 +105,41 @@ the live MCP catalog to advertise closed read-only annotations. Probe success
 means only that those exact calls behaved as declared; it is not semantic,
 quality, safety, or publication acceptance.
 
-Packed-runtime work distinguishes three initialization causes using Kit-owned
-signals: its declared deadline, caller cancellation, and Provider or transport
-rejection. It never infers cause from an SDK or JSON-RPC number. A
-Provider-originated rejection, including JSON-RPC `-32001`, remains a bounded
-Provider or transport failure; caller cancellation remains
+Packed-runtime work distinguishes Developer Kit whole-operation deadline,
+caller cancellation, Provider rejection, and operating-system transport
+termination using Kit-owned signals. It never infers cause from an SDK or
+JSON-RPC number. The one deadline starts at public operation entry and is
+consumed by project/archive reads, Host preview, MCP initialization and catalog,
+every call or concurrent batch, measurement, and successful persistence. After
+deadline or caller cancellation, transport close, temporary cleanup, and one
+failure observation may use only the separately disclosed bounded closeout
+allowance. A Provider-originated rejection, including JSON-RPC `-32001`, remains
+a stage-specific bounded Provider or transport failure with at most one numeric
+`protocolCode`; caller cancellation remains
 `MEASURE_CANCELLED` through initialization, catalog discovery, and direct
 calls. Probe reports its own `PROBE_CANCELLED` across the same phases. A signal
 already cancelled before check, pack, probe, or measure may not run a project
 command, invoke Host preview, construct a transport, spawn a Provider, publish
 an artifact, or create an observation; direct API errors are `CHECK_CANCELLED`,
 `PACKAGE_CANCELLED`, `PROBE_CANCELLED`, or `MEASURE_CANCELLED`. In-flight MCP
-cancellation waits for the owned transport to close before returning.
+cancellation initiates bounded owned transport closure before returning. On
+POSIX the runtime is started as an isolated process group and the Kit performs
+EOF, group TERM, group KILL, and group-absence confirmation. Its termination
+record names that scope and reports work outside it as not observable. The
+Windows source route captures the owned process tree, applies bounded
+`taskkill /T` and `/F`, and confirms the captured PIDs are absent; processes
+outside the captured set are likewise not observable. A failure to confirm the
+owned scope is `PROBE_RUNTIME_TERMINATION_FAILED` or
+`MEASURE_RUNTIME_TERMINATION_FAILED`; unsettled work or temporary-runtime
+removal failure is `PROBE_RUNTIME_CLEANUP_FAILED` or
+`MEASURE_RUNTIME_CLEANUP_FAILED`. A failed observation may say
+`cleanup: completed` only when pending work settled, every started Provider's
+owned process scope is confirmed absent, and the temporary runtime was removed.
+It does not establish absence of a Provider process that violated the contract
+by escaping that scope. If pending work remains unsettled or the owned scope is
+unconfirmed, the extracted runtime remains retained rather than being removed
+under possible live work. A closeout timeout remains distinct from Provider
+success.
 Measurement observation directories are created only when a result is
 persisted; an early failure may not leave an empty observation directory or an
 extracted runtime behind. A failure record that was successfully written is

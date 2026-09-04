@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict'
 import { createReadStream } from 'node:fs'
 import { access, chmod, mkdir, mkdtemp, readFile, readdir, rename, rm, symlink, writeFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { createGunzip } from 'node:zlib'
 import test from 'node:test'
@@ -11,7 +11,7 @@ import { promisify } from 'node:util'
 import { fileURLToPath } from 'node:url'
 import tarStream from 'tar-stream'
 import { packProject, safePackProject } from '../src/pack.mjs'
-import { openMcpProbeSession, probeProject, safeProbeProject } from '../src/probe.mjs'
+import { openMcpProbeSession, probeProject, runMcpRequest, safeProbeProject } from '../src/probe.mjs'
 import { measureProject, safeMeasureProject } from '../src/measure.mjs'
 import { DeveloperKitError } from '../src/errors.mjs'
 
@@ -26,11 +26,20 @@ async function writeJson(path, value) {
 function fixtureRuntime({ initialize = 'respond', recordPid = false } = {}) {
   return `
 import { appendFileSync, writeFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
 import readline from 'node:readline'
 const lines = readline.createInterface({ input: process.stdin, crlfDelay: Infinity })
 const probeMode = process.env.OPENADAM_PROBE_MODE === '1'
 const initializeMode = ${JSON.stringify(initialize)}
+let toolCalls = 0
 if (${recordPid}) writeFileSync(process.env.HOME + '/provider.pid', String(process.pid))
+if (['call-stubborn', 'call-detached'].includes(initializeMode)) {
+  process.on('SIGTERM', () => {})
+  const descendant = spawn(process.execPath, ['-e', "process.on('SIGTERM', () => {}); setInterval(() => {}, 1000)"], { stdio: 'ignore', detached: initializeMode === 'call-detached' })
+  if (initializeMode === 'call-detached') descendant.unref()
+  writeFileSync(process.env.HOME + '/descendant.pid', String(descendant.pid))
+  setInterval(() => {}, 1000)
+}
 function send(value) { process.stdout.write(JSON.stringify(value) + '\\n') }
 for await (const line of lines) {
   const request = JSON.parse(line)
@@ -41,9 +50,12 @@ for await (const line of lines) {
   if (request.method === 'initialize') send({ jsonrpc: '2.0', id: request.id, result: { protocolVersion: request.params.protocolVersion, capabilities: { tools: {} }, serverInfo: { name: 'fixture-tool', version: '0.1.0' } } })
   else if (request.method === 'tools/list' && initializeMode === 'list-silent') continue
   else if (request.method === 'tools/list' && initializeMode === 'list-remote-timeout-code') send({ jsonrpc: '2.0', id: request.id, error: { code: -32001, message: 'Provider rejected tool listing.' } })
+  else if (request.method === 'tools/list' && initializeMode === 'list-terminate') process.exit(23)
   else if (request.method === 'tools/list') send({ jsonrpc: '2.0', id: request.id, result: { tools: probeMode ? [{ name: 'fixture.run', description: 'Run the fixture.', inputSchema: { type: 'object', additionalProperties: false, required: ['value'], properties: { value: { type: 'string', minLength: 1 } } }, outputSchema: { type: 'object', additionalProperties: false, required: ['status'], properties: { status: { const: 'ok' } } }, annotations: { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false } }] : [] } })
-  else if (request.method === 'tools/call' && initializeMode === 'call-silent') continue
+  else if (request.method === 'tools/call' && ['call-silent', 'call-stubborn', 'call-detached'].includes(initializeMode)) continue
   else if (request.method === 'tools/call' && initializeMode === 'call-remote-timeout-code') send({ jsonrpc: '2.0', id: request.id, error: { code: -32001, message: 'Provider rejected tool call.' } })
+  else if (request.method === 'tools/call' && initializeMode === 'call-terminate') process.exit(24)
+  else if (request.method === 'tools/call' && initializeMode === 'sustained-silent' && ++toolCalls > 8) continue
   else if (request.method === 'tools/call' && typeof request.params?.arguments?.value !== 'string') send({ jsonrpc: '2.0', id: request.id, error: { code: -32602, message: 'Invalid params' } })
   else if (request.method === 'tools/call') send({ jsonrpc: '2.0', id: request.id, result: { content: [{ type: 'text', text: 'ok' }], structuredContent: { status: 'ok' }, isError: false } })
   else send({ jsonrpc: '2.0', id: request.id, error: { code: -32601, message: 'Method not found' } })
@@ -55,19 +67,22 @@ async function writeFixtureRuntime(root, options) {
   await writeFile(join(root, 'payload/marketplace/plugins/fixture-tool/runtime/server.mjs'), fixtureRuntime(options))
 }
 
-async function waitForRecordedRuntime(before, { prefix = 'oadm-', home = 'cold-home', request } = {}) {
-  const deadline = Date.now() + 2000
+async function waitForRecordedRuntime(before, { prefix = 'oadm-', home = 'cold-home', request, minimumRequestCount = 1, descendant = false } = {}) {
+  const deadline = Date.now() + 5000
   while (Date.now() < deadline) {
     for (const name of await readdir(tmpdir())) {
       if (!name.startsWith(prefix) || before.has(name)) continue
       const root = join(tmpdir(), name)
       try {
         const pid = Number(await readFile(join(root, home, 'provider.pid'), 'utf8'))
+        const descendantPid = descendant ? Number(await readFile(join(root, home, 'descendant.pid'), 'utf8')) : null
         if (request !== undefined) {
           const requests = await readFile(join(root, home, 'requests.log'), 'utf8')
-          if (!requests.split('\n').includes(request)) continue
+          if (requests.split('\n').filter((item) => item === request).length < minimumRequestCount) continue
         }
-        if (Number.isSafeInteger(pid) && pid > 0) return { root, pid }
+        if (Number.isSafeInteger(pid) && pid > 0 && (!descendant || (Number.isSafeInteger(descendantPid) && descendantPid > 0))) {
+          return { root, pid, ...(descendant ? { descendantPid } : {}) }
+        }
       } catch {}
     }
     await delay(20)
@@ -103,6 +118,14 @@ async function waitForProcessExit(pid) {
     await delay(20)
   }
   throw new Error(`Runtime process ${pid} remained alive after measurement cleanup.`)
+}
+
+function assertProcessExitedAtReturn(pid) {
+  assert.throws(
+    () => process.kill(pid, 0),
+    (error) => error?.code === 'ESRCH',
+    `Runtime process ${pid} was still observable when the API returned.`,
+  )
 }
 
 async function fixture(t, {
@@ -820,6 +843,388 @@ test('preserves caller cancellation through MCP catalog and tool-call stages acr
     const recovered = await probeProject(root, {}, { hostPreview: async () => hostPreviewFixture() })
     assert.equal(recovered.status, 'ok')
   }
+})
+
+test('normalizes Provider and transport catalog or call failures without losing protocol cause or recovery records', async (t) => {
+  const cases = [
+    { mode: 'list-remote-timeout-code', probeCode: 'PROBE_RUNTIME_CATALOG_FAILED', measureCode: 'MEASURE_RUNTIME_CATALOG_FAILED', protocolCode: -32001 },
+    { mode: 'call-remote-timeout-code', probeCode: 'PROBE_CALL_FAILED', measureCode: 'MEASURE_RUNTIME_CALL_FAILED', protocolCode: -32001 },
+    { mode: 'list-terminate', probeCode: 'PROBE_RUNTIME_CATALOG_FAILED', measureCode: 'MEASURE_RUNTIME_CATALOG_FAILED', protocolCode: -32000 },
+    { mode: 'call-terminate', probeCode: 'PROBE_CALL_FAILED', measureCode: 'MEASURE_RUNTIME_CALL_FAILED', protocolCode: -32000 },
+  ]
+  for (const item of cases) {
+    const root = await fixture(t, { runtimeInitialize: item.mode, recordRuntimePid: true })
+    await packProject(root)
+
+    const probed = await safeProbeProject(root, {}, { hostPreview: async () => hostPreviewFixture() })
+    assert.equal(probed.status, 'error')
+    assert.equal(probed.error.code, item.probeCode)
+    assert.equal(probed.error.details.protocolCode, item.protocolCode)
+    const persistedProbe = JSON.parse(await readFile(join(root, probed.observationDirectory, 'result.json'), 'utf8'))
+    assert.equal(persistedProbe.error.code, item.probeCode)
+    assert.equal(persistedProbe.error.details.protocolCode, item.protocolCode)
+
+    const measured = await safeMeasureProject(root, { iterations: 5, concurrency: 2 })
+    assert.equal(measured.status, 'error')
+    assert.equal(measured.error.code, item.measureCode)
+    assert.equal(measured.error.details.protocolCode, item.protocolCode)
+    const persistedMeasure = JSON.parse(await readFile(join(root, measured.observationDirectory, 'result.json'), 'utf8'))
+    assert.equal(persistedMeasure.error.code, item.measureCode)
+    assert.equal(persistedMeasure.error.details.protocolCode, item.protocolCode)
+    assert.equal(Buffer.byteLength(JSON.stringify(measured)) < 64 * 1024, true)
+
+    const cliOutcome = await execFileAsync(process.execPath, [
+      cli, 'measure', '--root', root, '--iterations', '5', '--concurrency', '2', '--json',
+    ], { timeout: 5000, maxBuffer: 64 * 1024 }).then(
+      (value) => ({ status: 'ok', value }),
+      (error) => ({ status: 'error', error }),
+    )
+    assert.equal(cliOutcome.status, 'error')
+    assert.equal(cliOutcome.error.code, 1)
+    assert.equal(cliOutcome.error.stderr, '')
+    const cliResult = JSON.parse(cliOutcome.error.stdout)
+    assert.equal(cliResult.error.code, item.measureCode)
+    assert.equal(cliResult.error.details.protocolCode, item.protocolCode)
+    assert.equal(cliResult.error.message.includes('Provider rejected'), false)
+    const cliPersisted = JSON.parse(await readFile(join(root, cliResult.observationDirectory, 'result.json'), 'utf8'))
+    assert.equal(cliPersisted.error.code, item.measureCode)
+    assert.equal(cliPersisted.error.details.protocolCode, item.protocolCode)
+
+    await writeFixtureRuntime(root, { initialize: 'respond' })
+    await packProject(root, { replace: true })
+    assert.equal((await probeProject(root, {}, { hostPreview: async () => hostPreviewFixture() })).status, 'ok')
+    assert.equal((await measureProject(root, { iterations: 5, concurrency: 2 })).status, 'ok')
+  }
+})
+
+test('bounds normalized MCP protocol context to one signed 32-bit integer or null', async () => {
+  for (const protocolCode of ['ERR_TRANSPORT', 2 ** 40]) {
+    await assert.rejects(
+      runMcpRequest(
+        async () => { throw Object.assign(new Error('private Provider failure text'), { code: protocolCode, private: 'not-public' }) },
+        { failureCode: 'PROBE_CALL_FAILED', failureMessage: 'The packed runtime call failed.' },
+      ),
+      (error) => {
+        assert.equal(error instanceof DeveloperKitError, true)
+        assert.equal(error.code, 'PROBE_CALL_FAILED')
+        assert.deepEqual(error.details, { protocolCode: null })
+        assert.equal(JSON.stringify(error.details).includes('private'), false)
+        return true
+      },
+    )
+  }
+})
+
+test('enforces one whole-operation deadline for real silent MCP probe and measure calls, then recovers', async (t) => {
+  const root = await fixture(t, { runtimeInitialize: 'call-silent', runtimeTimeoutMs: 5000, recordRuntimePid: true })
+  await packProject(root)
+
+  const probeTemporaryBefore = new Set(await readdir(tmpdir()))
+  const probeStarted = performance.now()
+  const probed = await safeProbeProject(root, { deadlineMs: 100 }, { hostPreview: async () => hostPreviewFixture() })
+  const probeElapsedMs = performance.now() - probeStarted
+  assert.equal(probed.status, 'error')
+  assert.equal(probed.error.code, 'PROBE_DEADLINE_EXCEEDED')
+  assert.equal(probed.error.details.deadlineMs, 100)
+  assert.equal(probeElapsedMs < 2000, true, `probe deadline closeout took ${probeElapsedMs} ms`)
+  const persistedProbe = JSON.parse(await readFile(join(root, probed.observationDirectory, 'result.json'), 'utf8'))
+  assert.equal(persistedProbe.error.code, 'PROBE_DEADLINE_EXCEEDED')
+  assert.deepEqual(persistedProbe.error.details, { deadlineMs: 100 })
+  assert.equal(persistedProbe.deadline.closeoutBudgetMs, 4200)
+  assert.equal(['completed', 'not-required'].includes(persistedProbe.closeout.pendingOperations), true)
+  assert.equal(persistedProbe.closeout.runtimeTermination.status, 'confirmed')
+  assert.equal(persistedProbe.closeout.runtimeTermination.processes.every((item) => item.scopeStatus === 'confirmed-absent'), true)
+  assert.equal(persistedProbe.closeout.temporaryRuntime, 'completed')
+  assert.equal(persistedProbe.closeout.failureObservation, 'this-record')
+  assert.deepEqual(persistedProbe.closeout.effects, { kitOwnedExternalStateMutation: 'none', providerEffects: 'not-established', providerProcessScope: 'confirmed' })
+  assert.deepEqual((await readdir(tmpdir())).filter((name) => name.startsWith('oadp-') && !probeTemporaryBefore.has(name)), [])
+
+  const measureTemporaryBefore = new Set(await readdir(tmpdir()))
+  const measureStarted = performance.now()
+  const measured = await safeMeasureProject(root, { deadlineMs: 100, iterations: 5, concurrency: 2 })
+  const measureElapsedMs = performance.now() - measureStarted
+  assert.equal(measured.status, 'error')
+  assert.equal(measured.error.code, 'MEASURE_DEADLINE_EXCEEDED')
+  assert.equal(measured.error.details.deadlineMs, 100)
+  assert.equal(measureElapsedMs < 2000, true, `measure deadline closeout took ${measureElapsedMs} ms`)
+  const persistedMeasure = JSON.parse(await readFile(join(root, measured.observationDirectory, 'result.json'), 'utf8'))
+  assert.equal(persistedMeasure.error.code, 'MEASURE_DEADLINE_EXCEEDED')
+  assert.deepEqual(persistedMeasure.error.details, { deadlineMs: 100 })
+  assert.equal(persistedMeasure.deadline.closeoutBudgetMs, 4200)
+  assert.equal(['completed', 'not-required'].includes(persistedMeasure.closeout.pendingOperations), true)
+  assert.equal(persistedMeasure.closeout.runtimeTermination.status, 'confirmed')
+  assert.equal(persistedMeasure.closeout.runtimeTermination.processes.every((item) => item.scopeStatus === 'confirmed-absent'), true)
+  assert.equal(persistedMeasure.closeout.temporaryRuntime, 'completed')
+  assert.equal(persistedMeasure.closeout.failureObservation, 'this-record')
+  assert.deepEqual(persistedMeasure.closeout.effects, { kitOwnedExternalStateMutation: 'none', providerEffects: 'not-established', providerProcessScope: 'confirmed' })
+  assert.deepEqual((await readdir(tmpdir())).filter((name) => name.startsWith('oadm-') && !measureTemporaryBefore.has(name)), [])
+
+  const cliMeasureStarted = performance.now()
+  const cliMeasure = await execFileAsync(process.execPath, [
+    cli, 'measure', '--root', root, '--deadline-ms', '100', '--iterations', '5', '--concurrency', '2', '--json',
+  ], { timeout: 2000, maxBuffer: 64 * 1024 }).then(
+    (value) => ({ status: 'ok', value }),
+    (error) => ({ status: 'error', error }),
+  )
+  const cliMeasureElapsedMs = performance.now() - cliMeasureStarted
+  assert.equal(cliMeasure.status, 'error')
+  assert.equal(cliMeasure.error.code, 1)
+  assert.equal(cliMeasure.error.stderr, '')
+  assert.equal(cliMeasureElapsedMs < 2000, true, `CLI measure deadline closeout took ${cliMeasureElapsedMs} ms`)
+  const cliMeasureResult = JSON.parse(cliMeasure.error.stdout)
+  assert.equal(cliMeasureResult.error.code, 'MEASURE_DEADLINE_EXCEEDED')
+  assert.equal(cliMeasureResult.error.details.deadlineMs, 100)
+  const cliMeasurePersisted = JSON.parse(await readFile(join(root, cliMeasureResult.observationDirectory, 'result.json'), 'utf8'))
+  assert.equal(cliMeasurePersisted.error.code, 'MEASURE_DEADLINE_EXCEEDED')
+
+  await writeFixtureRuntime(root, { initialize: 'respond' })
+  await packProject(root, { replace: true })
+  assert.equal((await probeProject(root, {}, { hostPreview: async () => hostPreviewFixture() })).status, 'ok')
+  assert.equal((await measureProject(root, { iterations: 5, concurrency: 2 })).status, 'ok')
+})
+
+test('applies the same whole-operation deadline to Agent Host preview before direct runtime work', async (t) => {
+  const root = await fixture(t)
+  await packProject(root)
+  let directRuntimeStarted = false
+  const started = performance.now()
+  const result = await safeProbeProject(root, { deadlineMs: 100 }, {
+    hostPreview: async ({ signal }) => new Promise((resolve, reject) => {
+      const timer = setTimeout(() => resolve(hostPreviewFixture()), 5000)
+      timer.unref?.()
+      signal.addEventListener('abort', () => {
+        clearTimeout(timer)
+        reject(signal.reason)
+      }, { once: true })
+    }),
+    mcpProbe: async () => {
+      directRuntimeStarted = true
+      throw new Error('direct runtime must remain unreachable')
+    },
+  })
+  const elapsedMs = performance.now() - started
+  assert.equal(result.status, 'error')
+  assert.equal(result.error.code, 'PROBE_DEADLINE_EXCEEDED')
+  assert.equal(elapsedMs < 2000, true, `Host preview deadline closeout took ${elapsedMs} ms`)
+  assert.equal(directRuntimeStarted, false)
+  const persisted = JSON.parse(await readFile(join(root, result.observationDirectory, 'result.json'), 'utf8'))
+  assert.equal(persisted.error.code, 'PROBE_DEADLINE_EXCEEDED')
+  assert.equal(persisted.cleanup, 'completed')
+})
+
+test('interrupts a pending concurrent measurement batch with the same cumulative deadline', async (t) => {
+  const root = await fixture(t, { runtimeInitialize: 'sustained-silent', runtimeTimeoutMs: 5000, recordRuntimePid: true })
+  await packProject(root)
+  const temporaryBefore = new Set(await readdir(tmpdir()))
+  const started = performance.now()
+  const pending = measureProject(root, { deadlineMs: 1000, iterations: 5, concurrency: 4 }).then(
+    (value) => ({ status: 'ok', value }),
+    (error) => ({ status: 'error', error }),
+  )
+  const runtime = await waitForRecordedRuntime(temporaryBefore, {
+    home: 'warm-home',
+    request: 'tools/call',
+    minimumRequestCount: 9,
+  })
+  const outcome = await pending
+  const elapsedMs = performance.now() - started
+  assert.equal(outcome.status, 'error')
+  assert.equal(outcome.error.code, 'MEASURE_DEADLINE_EXCEEDED')
+  assert.equal(outcome.error.details.deadlineMs, 1000)
+  assert.equal(elapsedMs < 2500, true, `concurrent deadline closeout took ${elapsedMs} ms`)
+  const persisted = JSON.parse(await readFile(join(root, outcome.error.details.observationDirectory, 'result.json'), 'utf8'))
+  assert.equal(persisted.error.code, 'MEASURE_DEADLINE_EXCEEDED')
+  await assert.rejects(access(runtime.root), (error) => error?.code === 'ENOENT')
+  await waitForProcessExit(runtime.pid)
+
+  await writeFixtureRuntime(root, { initialize: 'respond' })
+  await packProject(root, { replace: true })
+  assert.equal((await measureProject(root, { iterations: 5, concurrency: 4 })).status, 'ok')
+})
+
+test('terminates an EOF and TERM resistant Provider process group including its descendant before returning', async (t) => {
+  const cases = [
+    { carrier: 'probe', stop: 'cancel' },
+    { carrier: 'probe', stop: 'deadline' },
+    { carrier: 'measure', stop: 'cancel' },
+    { carrier: 'measure', stop: 'deadline' },
+  ]
+  for (const item of cases) {
+    const root = await fixture(t, {
+      runtimeInitialize: 'call-stubborn',
+      runtimeTimeoutMs: 5000,
+      recordRuntimePid: true,
+    })
+    await packProject(root)
+    const temporaryBefore = new Set(await readdir(tmpdir()))
+    const controller = new AbortController()
+    const options = {
+      deadlineMs: item.stop === 'deadline' ? 1000 : 5000,
+      ...(item.stop === 'cancel' ? { signal: controller.signal } : {}),
+    }
+    const started = performance.now()
+    const pending = item.carrier === 'probe'
+      ? probeProject(root, options, { hostPreview: async () => hostPreviewFixture() }).then(
+        (value) => ({ status: 'ok', value }),
+        (error) => ({ status: 'error', error }),
+      )
+      : measureProject(root, { ...options, iterations: 5, concurrency: 2 }).then(
+        (value) => ({ status: 'ok', value }),
+        (error) => ({ status: 'error', error }),
+      )
+    const runtime = await waitForRecordedRuntime(temporaryBefore, {
+      prefix: item.carrier === 'probe' ? 'oadp-' : 'oadm-',
+      home: item.carrier === 'probe' ? 'home' : 'cold-home',
+      request: 'tools/call',
+      descendant: true,
+    })
+    if (item.stop === 'cancel') controller.abort()
+    const outcome = await pending
+    const elapsedMs = performance.now() - started
+    assert.equal(elapsedMs < (item.stop === 'deadline' ? 3000 : 2000), true, `${item.carrier} ${item.stop} closeout took ${elapsedMs} ms`)
+    assert.equal(outcome.status, 'error')
+    assert.equal(outcome.error instanceof DeveloperKitError, true)
+    assert.equal(
+      outcome.error.code,
+      item.carrier === 'probe'
+        ? (item.stop === 'cancel' ? 'PROBE_CANCELLED' : 'PROBE_DEADLINE_EXCEEDED')
+        : (item.stop === 'cancel' ? 'MEASURE_CANCELLED' : 'MEASURE_DEADLINE_EXCEEDED'),
+    )
+    const persisted = JSON.parse(await readFile(join(root, outcome.error.details.observationDirectory, 'result.json'), 'utf8'))
+    assert.equal(persisted.cleanup, 'completed')
+    assert.equal(['completed', 'not-required'].includes(persisted.closeout.pendingOperations), true)
+    assert.equal(persisted.closeout.temporaryRuntime, 'completed')
+    assert.equal(persisted.closeout.runtimeTermination.status, 'confirmed')
+    assert.equal(persisted.closeout.runtimeTermination.processes.length, 1)
+    assert.equal(
+      persisted.closeout.runtimeTermination.processes[0].scope,
+      process.platform === 'win32' ? 'windows-process-tree' : 'posix-process-group',
+    )
+    if (process.platform === 'win32') {
+      assert.match(persisted.closeout.runtimeTermination.processes[0].method, /^taskkill-(?:force-)?tree$/u)
+    } else {
+      assert.equal(persisted.closeout.runtimeTermination.processes[0].method, 'kill-group')
+    }
+    assert.equal(persisted.closeout.runtimeTermination.processes[0].rootExitObserved, true)
+    assert.equal(persisted.closeout.runtimeTermination.processes[0].scopeStatus, 'confirmed-absent')
+    assert.equal(persisted.closeout.runtimeTermination.processes[0].outsideScope, 'not-observable')
+    assert.equal('processTree' in persisted.closeout.runtimeTermination.processes[0], false)
+    assert.equal(persisted.closeout.effects.providerProcessScope, 'confirmed')
+    await assert.rejects(access(runtime.root), (error) => error?.code === 'ENOENT')
+    assertProcessExitedAtReturn(runtime.pid)
+    assertProcessExitedAtReturn(runtime.descendantPid)
+
+    await writeFixtureRuntime(root, { initialize: 'respond' })
+    await packProject(root, { replace: true })
+    const recovered = item.carrier === 'probe'
+      ? await probeProject(root, {}, { hostPreview: async () => hostPreviewFixture() })
+      : await measureProject(root, { iterations: 5, concurrency: 2 })
+    assert.equal(recovered.status, 'ok')
+  }
+})
+
+test('reports the owned POSIX process group without claiming visibility into a detached Provider child', {
+  skip: process.platform === 'win32',
+}, async (t) => {
+  const root = await fixture(t, {
+    runtimeInitialize: 'call-detached',
+    runtimeTimeoutMs: 5000,
+    recordRuntimePid: true,
+  })
+  await packProject(root)
+  const temporaryBefore = new Set(await readdir(tmpdir()))
+  const controller = new AbortController()
+  let detachedPid
+  t.after(async () => {
+    if (!Number.isSafeInteger(detachedPid)) return
+    try { process.kill(detachedPid, 'SIGKILL') } catch {}
+    await waitForProcessExit(detachedPid).catch(() => {})
+  })
+
+  const pending = probeProject(
+    root,
+    { deadlineMs: 5000, signal: controller.signal },
+    { hostPreview: async () => hostPreviewFixture() },
+  ).then(
+    (value) => ({ status: 'ok', value }),
+    (error) => ({ status: 'error', error }),
+  )
+  const runtime = await waitForRecordedRuntime(temporaryBefore, {
+    prefix: 'oadp-',
+    home: 'home',
+    request: 'tools/call',
+    descendant: true,
+  })
+  detachedPid = runtime.descendantPid
+  controller.abort()
+  const outcome = await pending
+
+  assert.equal(outcome.status, 'error')
+  assert.equal(outcome.error.code, 'PROBE_CANCELLED')
+  const persisted = JSON.parse(await readFile(join(root, outcome.error.details.observationDirectory, 'result.json'), 'utf8'))
+  const termination = persisted.closeout.runtimeTermination.processes[0]
+  assert.equal(persisted.cleanup, 'completed')
+  assert.equal(termination.scope, 'posix-process-group')
+  assert.equal(termination.scopeStatus, 'confirmed-absent')
+  assert.equal(termination.outsideScope, 'not-observable')
+  assert.equal('processTree' in termination, false)
+  assert.equal(persisted.closeout.effects.providerProcessScope, 'confirmed')
+  assertProcessExitedAtReturn(runtime.pid)
+  assert.doesNotThrow(() => process.kill(detachedPid, 0))
+})
+
+test('retains the extracted runtime when owned process-scope termination is unconfirmed', async (t) => {
+  const root = await fixture(t)
+  await packProject(root)
+  let retainedRoot
+  t.after(async () => {
+    if (retainedRoot !== undefined) await rm(retainedRoot, { recursive: true, force: true })
+  })
+
+  const result = await safeProbeProject(root, {}, {
+    hostPreview: async () => hostPreviewFixture(),
+    mcpProbe: async ({ budget, extractedRoot }) => {
+      retainedRoot = dirname(extractedRoot)
+      budget.recordRuntimeTermination('unconfirmed-fixture', {
+        status: 'unconfirmed',
+        platform: process.platform,
+        scope: process.platform === 'win32' ? 'windows-process-tree' : 'posix-process-group',
+        method: 'fixture-unconfirmed',
+        rootExitObserved: false,
+        scopeStatus: 'still-observed',
+        outsideScope: 'not-observable',
+      })
+      throw new DeveloperKitError('PROBE_CALL_FAILED', 'Fixture direct call failed.')
+    },
+  })
+  assert.equal(result.status, 'error')
+  assert.equal(result.error.code, 'PROBE_RUNTIME_TERMINATION_FAILED')
+  assert.equal(result.cleanup, 'incomplete')
+  const persisted = JSON.parse(await readFile(join(root, result.observationDirectory, 'result.json'), 'utf8'))
+  assert.equal(persisted.closeout.runtimeTermination.status, 'unconfirmed')
+  assert.equal(persisted.closeout.temporaryRuntime, 'retained-process-scope-unconfirmed')
+  assert.equal(persisted.cleanup, 'incomplete')
+  await access(retainedRoot)
+})
+
+test('keeps first-cause authority when caller cancellation and the whole deadline race', async (t) => {
+  const cancelRoot = await fixture(t, { runtimeInitialize: 'call-silent', runtimeTimeoutMs: 5000 })
+  await packProject(cancelRoot)
+  const caller = new AbortController()
+  const callerTimer = setTimeout(() => caller.abort(), 30)
+  const cancelled = await safeProbeProject(cancelRoot, { deadlineMs: 1000, signal: caller.signal }, { hostPreview: async () => hostPreviewFixture() })
+  clearTimeout(callerTimer)
+  assert.equal(cancelled.error.code, 'PROBE_CANCELLED')
+  assert.equal(cancelled.error.details?.deadlineMs, undefined)
+
+  const deadlineRoot = await fixture(t, { runtimeInitialize: 'call-silent', runtimeTimeoutMs: 5000 })
+  await packProject(deadlineRoot)
+  const lateCaller = new AbortController()
+  const lateTimer = setTimeout(() => lateCaller.abort(), 1000)
+  const expired = await safeMeasureProject(deadlineRoot, { deadlineMs: 100, iterations: 5, concurrency: 2, signal: lateCaller.signal })
+  clearTimeout(lateTimer)
+  assert.equal(expired.error.code, 'MEASURE_DEADLINE_EXCEEDED')
+  assert.equal(expired.error.details.deadlineMs, 100)
 })
 
 test('does not convert Provider -32001 or OS transport termination into caller cancellation', async (t) => {

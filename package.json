@@ -1,6 +1,6 @@
 {
   "name": "@openadam/agent-tool-development-kit",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "private": true,
   "type": "module",
   "description": "Deterministic developer tooling for building and validating Agent tool products.",
@@ -26,6 +26,7 @@
     "LICENSE",
     "NOTICE",
     "THIRD_PARTY_NOTICES.txt",
+    "CHANGELOG.md",
     "README.md"
   ],
   "scripts": {

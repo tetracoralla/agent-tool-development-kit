@@ -182,19 +182,49 @@ signed or notarized distribution, Linux support, and another-device acceptance
 remain explicit release observations rather than properties inferred from this
 source checkout.
 
+`probe` and `measure` apply `--deadline-ms` once, at operation entry. The same
+Kit-owned budget covers project and archive reads, state-free Host preview,
+MCP connection, catalog discovery, every direct call and concurrent batch, and
+successful result persistence. Deadline or caller-cancellation closeout is a
+separate maximum 4.2-second allowance: up to 3.2 seconds to settle interrupted
+work, including a Kit-owned transport's bounded process-scope shutdown, then up
+to 500 ms each for temporary-runtime cleanup and failure-observation
+persistence. On POSIX the Provider starts in its own process group and closure
+uses EOF, group `TERM`, group `KILL`, and an absence check. A Provider running
+with `OPENADAM_PROBE_MODE=1` must not daemonize, create another session/process
+group, or otherwise escape that group; processes outside the owned group are
+not observable and there is no OS process sandbox. On Windows the corresponding
+source route snapshots the owned process tree, uses bounded `taskkill /T` then
+`/F`, and checks every captured PID; current Windows runtime execution remains
+an unrun release observation. The returned `deadline` object discloses the
+closeout allowance and scope. Failed records separately state pending-operation
+settlement, process-scope termination, temporary-runtime cleanup,
+failure-observation, and owned external-state effects. `cleanup` is `completed`
+only when pending work settled, every started Provider's declared owned process
+scope is confirmed absent, and the temporary runtime was removed; it makes no
+claim about a contract-violating process that escaped that scope. If pending
+work does not settle or the owned process scope cannot be confirmed absent, the
+temporary runtime is retained rather than removed from underneath possible live
+work, and `cleanup` remains `incomplete`.
+
 `measure` operates on the packed provider, not a mocked core. It records cold
 startup, warm latency distribution, bounded concurrent throughput, a cancelled
 client call followed by same-session recovery, direct-provider RSS samples,
 and current MCP catalog plus declared Skill bytes. With no owner-defined
 threshold it reports a baseline, never a general performance PASS.
 Its initialization deadline is owned by the Kit: a Provider-sent JSON-RPC
-`-32001` remains a distinct bounded connect failure rather than being reported
-as a locally observed timeout. Caller cancellation is a third Kit-owned cause
-through initialization, catalog discovery, and direct calls. A pre-cancelled
+`-32001` remains a distinct bounded Provider failure rather than being reported
+as a locally observed timeout. Catalog and call rejection or transport failure
+use stage-specific stable Kit errors and retain only a numeric bounded
+`protocolCode`; operating-system termination is not cancellation. Caller
+cancellation is a third Kit-owned cause through initialization, catalog
+discovery, and direct calls. A pre-cancelled
 check, pack, probe, or measure request runs no project command or Host preview,
 spawns no Provider, creates no artifact, and writes no observation. In-flight
-runtime cancellation waits for cleanup and persists the operation's stable
-cancelled result.
+runtime cancellation waits for confirmed owned-process-scope and temporary
+cleanup before it may persist `cleanup: completed`. Failure to confirm
+termination or cleanup is a separate stable Kit error rather than a successful
+cancelled closeout.
 
 Maintainers can separately measure the packaged Developer Kit CLI itself with
 `npm run measure:self`. That baseline covers startup, bounded parallel starts,

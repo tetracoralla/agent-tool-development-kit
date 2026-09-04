@@ -129,6 +129,24 @@ or Procedure integration instructions only when the declaration names them.
    catalog bytes, and declared Skill bytes. Without a blocking threshold it is a
    baseline, not a performance PASS.
 
+`--deadline-ms` on probe and measure is one cumulative Kit-owned budget, not a
+fresh timeout per stage. Treat `*_CANCELLED`, `*_DEADLINE_EXCEEDED`,
+`*_RUNTIME_CATALOG_FAILED`, and `*_CALL_FAILED` or
+`MEASURE_RUNTIME_CALL_FAILED` as distinct terminal causes. A returned numeric
+`protocolCode` is bounded Provider/transport context; `-32001` alone never means
+that the Kit deadline fired. Treat `*_RUNTIME_TERMINATION_FAILED` and
+`*_RUNTIME_CLEANUP_FAILED` as unsafe-to-retry process/temporary-state outcomes.
+Inspect the written failure observation's pending-operation,
+`runtimeTermination`, temporary-runtime, and overall cleanup states before
+retrying the repaired packed artifact. `cleanup: completed` means all three
+closed; it does not establish anything about Provider-authored external
+effects. On POSIX, `runtimeTermination` confirms only the Kit-created process
+group. A probe-mode Provider must not daemonize or create a new session/process
+group; the record reports work outside the owned scope as `not-observable`. If
+pending work or the owned scope is unconfirmed, the Kit retains the temporary
+runtime and reports `cleanup: incomplete`; do not retry until the residual work
+is resolved.
+
 Keep timeout, cancellation, output limit, unsafe effects, stale artifact, and
 Host unavailability separate. Do not bypass a blocked Host with source execution.
 

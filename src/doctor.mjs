@@ -4,10 +4,11 @@ function major(version) {
   return Number(version.replace(/^v/u, '').split('.')[0])
 }
 
-export async function locateAgentHost({ runner = probeCommand, platform = process.platform } = {}) {
-  const fromPath = await runner('agent-host', ['--help'])
+export async function locateAgentHost({ runner = probeCommand, platform = process.platform, signal, timeout } = {}) {
+  const options = { ...(signal === undefined ? {} : { signal }), ...(timeout === undefined ? {} : { timeout }) }
+  const fromPath = await runner('agent-host', ['--help'], options)
   if (fromPath.available || platform !== 'darwin') return { ...fromPath, executable: fromPath.available ? 'agent-host' : null, source: fromPath.available ? 'path' : 'unavailable' }
-  const fromApplication = await runner('/Applications/Agent Host.app/Contents/MacOS/agent-host', ['--help'])
+  const fromApplication = await runner('/Applications/Agent Host.app/Contents/MacOS/agent-host', ['--help'], options)
   return { ...fromApplication, executable: fromApplication.available ? '/Applications/Agent Host.app/Contents/MacOS/agent-host' : null, source: fromApplication.available ? 'application' : 'unavailable' }
 }
 
