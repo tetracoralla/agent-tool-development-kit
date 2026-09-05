@@ -1,30 +1,15 @@
-# Security Policy
+# Security
 
-## Supported versions
+Report suspected vulnerabilities privately through
+[GitHub security advisories](https://github.com/tetracoralla/agent-tool-development-kit/security/advisories/new).
+Do not place credentials, private source, or user transcripts in public issues.
+Include the affected revision, a minimal synthetic reproduction, and observed
+effects. The current main branch is the supported source line.
 
-Only the latest released `0.1.x` version is eligible for security fixes during
-the developer preview. Unreleased source commits and older local artifacts are
-not separate supported releases.
+The Kit executes explicitly declared developer code. Its environment filtering,
+staging, timeouts, and process cleanup are not an operating-system or network
+sandbox. Inspect unfamiliar projects before running their checks or probes.
 
-## Reporting a vulnerability
-
-Use the repository's private security-advisory form when a public repository is
-available. If that private form is unavailable, contact the distributor through
-the same private channel that supplied the software. Do not include credentials,
-private Agent transcripts, user data, or exploitable details in a public issue.
-
-Include the affected version and carrier, operating system and architecture,
-the smallest reproducible input, expected and observed behavior, and whether
-the issue can cross a workspace, credential, process, package, or Agent-host
-boundary. Redact secrets and personal data.
-
-Receipt, response time, remediation, and disclosure dates are coordinated for
-each report; this preview does not promise a fixed service-level agreement.
-
-## Scope
-
-Security reports may cover the CLI, project validation, package inventory,
-archive extraction, isolated probe and measurement routes, generated
-launchers, the Skill-only plugin, and the Agent Host integration contract.
-Issues in an independently authored provider or Agent shell should be reported
-to that product's owner unless the Developer Kit caused or widened the issue.
+`pack` seals a local artifact; `probe` validates and exercises it in temporary
+state. Neither publishes it nor installs it into your Agent apps. An unconfirmed
+process shutdown retains the temporary runtime and reports incomplete cleanup.

@@ -8,6 +8,19 @@ description: Use when discovering, proposing, creating, adopting, checking, pack
 Use the installed Developer Kit CLI for deterministic repository facts and this
 Skill only for the product judgment that the CLI cannot make honestly.
 
+The purpose of a tool is to take a concrete piece of work off the Agent: exact
+calculation, validation, transformation, or another declared operation. Identify
+that work and make the direct route discoverable with enough typed output for
+the Agent's next step. Do not require the Agent to manually repeat the tool's
+algorithm or create another report merely to use its result.
+
+Use real requests to check correctness, failure recovery, and calling overhead.
+Do not invent a no-tool baseline, simulated model run, token saving, or adoption
+claim. A comparison study is optional work requiring an actual unresolved
+question and authorized model use; it is not a routine prerequisite to building
+or using a useful tool. Keep net reasoning and token savings unknown when they
+have not been observed.
+
 ## Establish the task and current facts
 
 1. Read the target repository's `AGENTS.md`, product model, and review contract
@@ -124,7 +137,8 @@ or Procedure integration instructions only when the declaration names them.
 3. `scripts/openadam-dev probe --root <repository> --json` asks current Agent
    Host to admit the exact archive without installed state, then executes only
    declared closed read-only valid and invalid examples in a temporary workspace.
-4. `scripts/openadam-dev measure --root <repository> --json` measures the packed
+4. When startup, concurrency, cancellation, or context cost needs investigation,
+   `scripts/openadam-dev measure --root <repository> --json` measures the packed
    runtime's cold/warm/concurrent behavior, cancellation and recovery, RSS,
    catalog bytes, and declared Skill bytes. Without a blocking threshold it is a
    baseline, not a performance PASS.

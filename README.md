@@ -3,6 +3,11 @@
 Agent Tool Development Kit is the external developer product for building and
 validating tools that work cleanly with OpenAdam's Agent-facing architecture.
 
+Its purpose is to help an Agent delegate concrete work to a tool instead of
+reasoning through that work repeatedly. Actual calls establish behavior and
+calling overhead; they do not by themselves establish net reasoning or token
+savings. Model comparison experiments are not part of the default workflow.
+
 The target delivery contains:
 
 - `openadam-dev`, a deterministic CLI for authorized-material inspection,
@@ -25,6 +30,61 @@ published to a public registry or marketplace. The Kit source and bundled
 component are licensed under Apache-2.0; generated provider projects retain
 their separately chosen license and default to `UNLICENSED` until that choice
 is made explicitly.
+
+## Use the source release
+
+Install Node.js 22 or later, npm, Git, and Python 3. The public CLI source can
+be used without a preinstalled Agent Host or access to our development folders:
+
+```sh
+git clone https://github.com/tetracoralla/agent-tool-development-kit.git
+cd agent-tool-development-kit
+npm ci
+node src/cli.mjs --version --json
+node src/cli.mjs doctor --json
+npm run check
+```
+
+The checks build and execute a sealed component and verify its reproducibility.
+They do not call a model. macOS and Linux source checks run in CI; the supported
+installed Agent Host route is macOS arm64. Windows and other Agent applications
+remain separate runtime qualification work.
+
+Create a project in a new directory, using your own identifiers:
+
+```sh
+node src/cli.mjs init node-mcp-provider \
+  --destination ../sample-provider --id org.example.sample-provider \
+  --package-name @example/sample-provider --plugin sample-provider \
+  --operation sample.run --name "Sample Provider" \
+  --summary "Describe the exact task this tool performs." \
+  --author "Your name" --license Apache-2.0 --json
+node src/cli.mjs inspect --root ../sample-provider --json
+```
+
+The generated core deliberately returns `CORE_NOT_IMPLEMENTED`. Implement the
+core, closed MCP result/input schemas, tests, Skill, legal files, and real
+success/error probes before removing `.openadam-scaffold`. Its own
+`npm run check` rejects an unfinished scaffold. Choose the generated project's
+license yourself; omitting `--license` keeps it `UNLICENSED`.
+
+From the Kit directory, use `node src/cli.mjs check`, `pack`, `probe`, or
+`measure` with `--root ../sample-provider --json`. `check` runs the project's
+declared commands; install that project's dependencies first. `pack` produces
+a local archive and never publishes or installs it.
+
+`probe` additionally needs the current [Agent Host source CLI](https://github.com/tetracoralla/agent-host-suite)
+on `PATH`. Install a package built with `npm pack` from that repository into a
+private prefix, then include that prefix's `node_modules/.bin` in `PATH`.
+Standalone admission does not need a bound compatibility release or configured
+Agent app, and it does not read or write Agent Host state. `measure` executes the
+same packed provider and reports a baseline; neither command establishes
+reasoning or model-token savings.
+
+The source release is intentionally not published to npm. A GitHub clone,
+local npm package, sealed Developer Kit component, and a complete Agent Host
+compatibility installer are distinct artifacts. An unbound Host release catalog
+cannot install the `developer` profile.
 
 ## First use with an Agent
 

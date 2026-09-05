@@ -31,12 +31,13 @@
   ],
   "scripts": {
     "test": "node --test test/*.test.mjs",
-    "check:syntax": "node --check src/*.mjs scripts/*.mjs test/*.test.mjs",
+    "check:syntax": "node scripts/check-syntax.mjs",
     "check:schema": "node scripts/check-schema.mjs",
     "build:component": "node scripts/build-developer-component.mjs --replace",
     "measure:self": "node scripts/measure-developer-kit.mjs",
     "check:distribution": "node scripts/check-distribution.mjs",
-    "check": "npm run check:syntax && npm test && npm run check:schema && npm run check:distribution"
+    "check": "npm run check:syntax && npm test && npm run check:schema && npm run check:distribution",
+    "audit:production": "npm audit --omit=dev --audit-level=high --registry=https://registry.npmjs.org"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.30.0",
@@ -46,5 +47,13 @@
   },
   "devDependencies": {
     "esbuild": "^0.25.12"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/tetracoralla/agent-tool-development-kit.git"
+  },
+  "homepage": "https://github.com/tetracoralla/agent-tool-development-kit#readme",
+  "bugs": {
+    "url": "https://github.com/tetracoralla/agent-tool-development-kit/issues"
   }
 }

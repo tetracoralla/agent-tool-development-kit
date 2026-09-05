@@ -8,7 +8,7 @@ architecture. It is developer configuration, not a portable Capability or
 Procedure standard.
 
 The initial schema identity is `openadam.agent-tool-project.v0.1`. The schema
-will be implemented under `schemas/` and versioned when its meaning changes.
+is implemented under `schemas/` and versioned when its meaning changes.
 
 ## Pre-project discovery contracts
 
