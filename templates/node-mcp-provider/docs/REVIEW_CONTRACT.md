@@ -26,6 +26,5 @@ product-specific high-risk sequences discovered during implementation.
   complete result bytes.
 - Keep owner business and experience acceptance separate from mechanical checks.
 
-Finish with `tools-dev workspace escalations` when this project is developed in
-that workspace; otherwise name any standards, Host, runtime, or shared-resource
+Report concrete cross-repository implications when found, naming any standards, Host, runtime, or shared-resource
 issue that remains external to this repository.
