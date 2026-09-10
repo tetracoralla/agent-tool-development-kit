@@ -170,7 +170,7 @@ Report separately:
 - external documentation and fresh-developer usability;
 - owner business and experience acceptance.
 
-Finish with `tools-dev workspace escalations`, naming any standards drift,
+Report concrete cross-repository implications when found, naming any standards drift,
 Agent Host integration issue, Direct Runtime conflict, duplicate abstraction,
 shared resource risk, or adjacent repository change still required. Local green
 checks do not compose into workspace or external-release acceptance.
